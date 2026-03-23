@@ -74,3 +74,27 @@ Everything about the challenge dataset — table schemas, tracking framework, ev
 | --- | -------------- |
 | [challenge_ideas.md](challenge_ideas.md) | 6 challenge directions + tips |
 
+
+## Setup env
+
+SNOWLFAKE_API_KEY=asdpofijaspoidfjiosadf
+
+**Setup**
+
+```
+open -e ~/.zshrc
+```
+
+**Apply**
+
+```
+source ~/.zshrc
+```
+
+**Check**
+
+```
+printenv | grep SNOWLFAKE_API_KEY
+```
+
+

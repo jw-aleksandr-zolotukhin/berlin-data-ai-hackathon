@@ -1,0 +1,238 @@
+version: 2
+
+# ──────────────────────────────────────────────────────────────────────────────
+# INTERMEDIATE LAYER — StreamCap / JustWatch Content Licensing Intelligence
+#
+# Purpose: pre-aggregated feature tables that bridge cleaned base views and
+# analytics marts. All intermediate models are materialised as TABLE (not view)
+# because they perform expensive GROUP BYs over millions of event rows. Marts
+# can then join lightweight table scans rather than re-scanning the event stream.
+#
+# Naming convention: int_<subject>_<what it contains>.
+#
+# Dependency chain:
+#   base_events_t1 ──► int_title_demand_signals
+#   base_events_t1 ──► int_title_provider_supply  ──► base_packages
+#   base_events_t1 ──► int_title_market_demand
+#   base_events_t1 ──► int_user_activity
+# ──────────────────────────────────────────────────────────────────────────────
+
+models:
+
+  # ── int_title_demand_signals ─────────────────────────────────────────────────
+  - name: int_title_demand_signals
+    description: |
+      **Grain: one row per (title_entity_id, event_date)**
+
+      Daily demand signal counts per top-level title. This is the central
+      pre-aggregation table for the licensing ROI models. By aggregating at the
+      (title, day) grain rather than the title-only grain, the model serves both:
+      - `fct_title_licensing_score` — which rolls up across all dates for total scores
+      - `fct_title_seasonality` — which groups by week to reveal holiday demand spikes
+
+      **Signal taxonomy** follows the StreamCap scoring framework:
+      - **AVOD signals** (ad-supported demand): page views, watchlist adds, trailer plays, free/ads clickouts
+      - **TVOD signals** (transactional demand): rent, buy, cinema clickouts
+      - **SVOD signals** (subscription competitor): flatrate, sports clickouts
+
+      **Why separate rent / buy / cinema:** the mart layer applies different
+      weights to each (`rent × 10`, `buy × 8`, `cinema × 6`) reflecting
+      decreasing transactional intent. Keeping them separate here preserves
+      optionality for downstream re-weighting without re-running this model.
+
+      **Source:** `base_events_t1`. Change the `ref()` to `base_events_t2` or
+      `base_events_t3` for broader market / longer time-window analysis.
+    columns:
+      - name: title_entity_id
+        description: "JustWatch top-level title ID. Part of the composite primary key. Join to `base_objects.object_id` for title metadata. Foreign key to `fct_title_licensing_score.title_entity_id`."
+      - name: event_date
+        description: "Calendar date (`DATE_TRUNC('day', collector_tstamp)`). Part of the composite primary key. Used for weekly aggregation in `fct_title_seasonality`."
+      - name: page_views
+        description: "Count of `event = 'page_view'` events for this title on this date. Passive engagement proxy — a user viewing the title detail page without clicking anything. Weight 1 in the AVOD score formula."
+      - name: title_clicks
+        description: "Count of `se_category = 'userinteraction' AND se_action = 'title_clicked'`. Active engagement — the user deliberately clicked on a title card. Weight 2 in the AVOD score formula."
+      - name: watchlist_adds
+        description: |
+          Count of `se_category = 'watchlist_add'`. Strongest passive demand signal
+          in the dataset — a user explicitly saving a title for later. Weight 5 in the AVOD
+          score formula, reflecting its higher intent compared to a casual page view.
+      - name: seenlist_adds
+        description: "Count of `se_category = 'seenlist_add'`. User marking the title as already seen. Engagement signal with weight 3 in the AVOD formula."
+      - name: likes
+        description: "Count of `se_category = 'likelist_add'`. Explicit positive preference signal. Weight 4 in the AVOD formula."
+      - name: trailer_plays
+        description: "Count of `se_category = 'youtube_started'`. Research behaviour indicating active title consideration. Weight 2 in the AVOD formula."
+      - name: avod_clickouts
+        description: |
+          Count of `se_category = 'clickout' AND se_action IN ('free', 'ads')`.
+          **Direct AVOD intent signal** — the user clicked through to a free or
+          ad-supported offer. Highest weight (10) in the AVOD score formula.
+          Used in `int_title_provider_supply` to infer that a free/ads offer exists.
+      - name: rent_clickouts
+        description: "Count of `se_category = 'clickout' AND se_action = 'rent'`. Direct transactional rent intent. Weight 10 in the TVOD score — the strongest individual signal."
+      - name: buy_clickouts
+        description: "Count of `se_category = 'clickout' AND se_action = 'buy'`. Transactional ownership intent. Weight 8 in the TVOD score."
+      - name: cinema_clickouts
+        description: "Count of `se_category = 'clickout' AND se_action = 'cinema'`. Cinema screening clickouts. Weight 6 in the TVOD score."
+      - name: tvod_clickouts
+        description: "Sum of rent + buy + cinema clickouts. Convenience aggregate used in `fct_title_seasonality`."
+      - name: svod_clickouts
+        description: "Count of `se_category = 'clickout' AND se_action IN ('flatrate', 'sports')`. Competitor subscription platform clicks. Used as a negative supply signal in `fct_title_licensing_score` (`has_svod_supply`) and in `int_user_activity` for user segmentation."
+      - name: total_clickouts
+        description: "Total clickout events for this title on this date regardless of monetisation type."
+      - name: unique_users
+        description: |
+          Count of distinct `user_id` values per (title, date).
+          Note: rolling this up across dates with `SUM()` in `fct_title_licensing_score`
+          produces user-day counts, not true unique users per title. This is documented
+          as `total_user_engagements` in the mart and is noted as an over-count.
+      - name: unique_sessions
+        description: "Count of distinct `session_id` values per (title, date)."
+      - name: market_count
+        description: "Count of distinct `app_locale` values with activity for this title on this date. Note: `MAX(market_count)` in the mart gives peak single-day market breadth; `int_title_market_demand` gives true cross-period market count."
+
+  # ── int_title_provider_supply ─────────────────────────────────────────────────
+  - name: int_title_provider_supply
+    description: |
+      **Grain: one row per (title_entity_id, provider_id, monetization_type)**
+
+      Infers which streaming providers currently offer each title and at what
+      price point, using clickout events as a supply proxy.
+
+      **Why clickouts as a supply signal:** JustWatch does not provide a catalogue
+      feed in this dataset. A user can only click out to a provider offer if that
+      offer exists on JustWatch. Therefore, a clickout to provider X with
+      monetisation type `'flatrate'` is strong evidence that the title is
+      available on X as a subscription. Zero clickouts means either no supply
+      OR no demand — context-dependent.
+
+      **Limitation:** supply is inferred globally, not per market. A title
+      available on Netflix Germany but not Netflix France will appear as
+      `has_avod_supply = true` in `fct_market_demand_gap` regardless of which
+      market the user was in when they clicked. This is an acceptable approximation
+      for the hackathon scope.
+
+      **monetization_bucket** groups the raw `clickout_monetization_type` values
+      into three strategic buckets: `avod` (free/ads), `tvod` (rent/buy/cinema),
+      `svod` (flatrate/sports). These buckets map directly to the three streaming
+      business models JustWatch is evaluating.
+    columns:
+      - name: title_entity_id
+        description: "Part of the composite primary key. Join to `base_objects.object_id` for title metadata, or to `int_title_demand_signals.title_entity_id` for demand context."
+      - name: provider_id
+        description: "Part of the composite primary key. Resolved from `clickout_provider_id`. Join to `base_packages.provider_id` for provider names."
+      - name: monetization_type
+        description: "Part of the composite primary key. The per-event monetisation type from `clickout_monetization_type`. One of: `'free'`, `'ads'`, `'rent'`, `'buy'`, `'cinema'`, `'flatrate'`, `'sports'`."
+      - name: unique_users_clicking
+        description: "Count of distinct `user_id` values that clicked this title on this provider at this monetisation type. Higher values indicate stronger supply-side demand signal."
+      - name: clickout_count
+        description: "Total clickout events for this (title, provider, monetisation_type) combination."
+      - name: provider_technical_name
+        description: "Resolved from `base_packages.technical_name` via `provider_id` join. Stable identifier for code-level grouping."
+      - name: provider_clear_name
+        description: "Resolved from `base_packages.clear_name`. Human-readable provider name for dashboard display."
+      - name: monetization_bucket
+        description: |
+          Strategic grouping of `monetization_type`:
+          `'avod'` — `free` or `ads` offers.
+          `'tvod'` — `rent`, `buy`, or `cinema` offers.
+          `'svod'` — `flatrate` or `sports` subscription offers.
+          Used in `fct_title_licensing_score` to compute `has_avod_supply`, `has_tvod_supply`,
+          `has_svod_supply` boolean flags and their provider counts.
+
+  # ── int_title_market_demand ──────────────────────────────────────────────────
+  - name: int_title_market_demand
+    description: |
+      **Grain: one row per (title_entity_id, app_locale)**
+
+      Breaks demand signals out by the user's chosen market (`app_locale`), not
+      their physical location (`geo_country`). This distinction is critical for
+      cross-market licensing ROI analysis.
+
+      **Why `app_locale` and not `geo_country`:** A German expat browsing JustWatch
+      from France has `geo_country = 'FR'` but `app_locale = 'de_DE'`. Their demand
+      signal belongs to the German market for content licensing purposes — they want
+      German-relevant content. Using `geo_country` would misattribute this demand
+      to France and distort market entry scores.
+
+      **Demand scores** use the same weights as `fct_title_licensing_score` to
+      ensure consistency: AVOD demand = `page_views × 1 + watchlist_adds × 5 +
+      avod_clickouts × 10`. TVOD demand = `tvod_clickouts × 10`.
+
+      This model feeds `fct_market_demand_gap` which produces the market entry
+      scorecard: which market has the highest AVOD demand relative to the supply
+      of free/ads titles?
+
+      **Source:** `base_events_t1` (Germany only prototype). Switch to
+      `base_events_t2` to get meaningful multi-market results.
+    columns:
+      - name: title_entity_id
+        description: "Part of the composite primary key. Join to `base_objects.object_id` or `fct_title_licensing_score.title_entity_id`."
+      - name: app_locale
+        description: |
+          Part of the composite primary key. The user's chosen market locale
+          (e.g. `'de_DE'`, `'en_GB'`). **Not** the physical location (`geo_country`).
+          This is the correct market dimension for licensing ROI analysis.
+      - name: avod_demand
+        description: "Weighted AVOD demand score for this title in this market: `page_views × 1 + watchlist_adds × 5 + avod_clickouts × 10`. Consistent with the formula in `fct_title_licensing_score`."
+      - name: tvod_demand
+        description: "Weighted TVOD demand score for this title in this market: `tvod_clickouts × 10`."
+      - name: unique_users
+        description: "Distinct `user_id` count in this market with any event for this title."
+
+  # ── int_user_activity ─────────────────────────────────────────────────────────
+  - name: int_user_activity
+    description: |
+      **Grain: one row per user_id**
+
+      Per-user behavioral feature matrix. This is the foundation for customer
+      segmentation in `fct_user_segments`. All signal counts are lifetime totals
+      across the T1 window (Germany, December 2025).
+
+      **Churn detection split:** the model counts events in two equal-ish
+      December halves — early (Dec 1–14, 14 days) and recent (Dec 15–31, 17 days).
+      In `fct_user_segments`, these counts are compared as daily rates
+      (early_events / 14 vs recent_events / 17) to determine whether a user's
+      engagement has dropped by more than 50 %. This approach works within
+      a single-month dataset because T1 only covers December 2025.
+
+      **Primary market:** the most frequently used `app_locale` per user is
+      computed via a subquery with `QUALIFY ROW_NUMBER() ... = 1`. Using the modal
+      locale (rather than MAX or LAST) ensures a user who temporarily switches
+      markets is still attributed to their home market.
+
+      **login_id:** aggregated with `MAX()` to pick any non-null login ID across
+      the user's events. Most events for a device are not authenticated, so a single
+      row can contain both NULL and non-null login IDs across different events.
+    columns:
+      - name: user_id
+        description: "Primary key. Anonymous device/browser ID from `base_events_t1`. Used as the join key to `fct_user_segments` and `fct_segment_title_demand`."
+      - name: login_id
+        description: "Any non-null login ID observed for this user, via `MAX(login_id)`. NULL if the user never authenticated during the observation window."
+      - name: primary_market
+        description: "The `app_locale` value this user used most frequently. Determined by `COUNT(*)` per locale with `QUALIFY ROW_NUMBER() = 1`. Represents the user's home market."
+      - name: active_days
+        description: "Distinct calendar dates with at least one event. Used as the denominator in `fct_user_segments` intent score normalisation (`avod_intent_raw = avod_signals / active_days`)."
+      - name: total_sessions
+        description: "Distinct `session_id` count across all events for this user."
+      - name: title_page_views
+        description: "Count of `event = 'page_view'` where `title_entity_id IS NOT NULL`. Content-specific page views, excluding homepage/search/genre browsing."
+      - name: watchlist_adds
+        description: "Count of `se_category = 'watchlist_add'`. High-intent AVOD signal. Weight 5 in `fct_user_segments.avod_intent_raw`."
+      - name: avod_clickouts
+        description: "Count of `se_category = 'clickout' AND se_action IN ('free', 'ads')`. Direct AVOD intent. Weight 10 in `fct_user_segments.avod_intent_raw`."
+      - name: rent_clickouts
+        description: "Count of `se_category = 'clickout' AND se_action = 'rent'`. Direct TVOD intent. Weight 10 in `fct_user_segments.tvod_intent_raw`."
+      - name: buy_clickouts
+        description: "Count of `se_category = 'clickout' AND se_action = 'buy'`. TVOD ownership intent. Weight 8 in `fct_user_segments.tvod_intent_raw`."
+      - name: svod_clickouts
+        description: "Count of `se_category = 'clickout' AND se_action IN ('flatrate', 'sports')`. Subscription platform usage. Feature in `fct_user_segments` K-Means clustering."
+      - name: unique_titles_engaged
+        description: "Distinct `title_entity_id` count for this user. Content breadth signal. Feature in `fct_user_segments` K-Means clustering."
+      - name: early_period_events
+        description: "Event count between Dec 1–14. Used alongside `recent_period_events` to compute the churn risk flag in `fct_user_segments`."
+      - name: recent_period_events
+        description: |
+          Event count between Dec 15–31. Compared to `early_period_events` as
+          daily rates in `fct_user_segments`:
+          `churn_risk_flag = (recent / 17) < (early / 14) * 0.5 AND early >= 3`.

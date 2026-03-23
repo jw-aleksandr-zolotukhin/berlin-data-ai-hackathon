@@ -4,9 +4,9 @@
 # Usage: snow sql -q "SELECT 1" -c hackathon
 
 [hackathon]
-account = "<ACCOUNT_ID>"
-user = "<your-email>"
-password = "<your-password>"
-warehouse = "WH_TEAM_1_XS"
+account = "<YOUR_ACCOUNT>"
+user = "<YOUR_EMAIL>"
+password = "<YOUR_PASSWORD>"
+warehouse = "WH_TEAM_3_XS"
 database = "DB_JW_SHARED"
 schema = "CHALLENGE"

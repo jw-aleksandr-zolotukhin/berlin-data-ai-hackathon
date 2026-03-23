@@ -34,3 +34,12 @@ models:
     base:
       +materialized: view
       +schema: base
+    intermediate:
+      +materialized: table
+      +schema: intermediate
+    marts:
+      +materialized: table
+      +schema: marts
+    ml:
+      +materialized: view
+      +schema: ml

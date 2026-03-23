@@ -1,0 +1,407 @@
+version: 2
+
+# ──────────────────────────────────────────────────────────────────────────────
+# MARTS LAYER — StreamCap / JustWatch Content Licensing Intelligence
+#
+# Purpose: analytics-ready aggregated outputs consumed by Lightdash dashboards,
+# the StreamCap CFO UI, and the ML pipeline (streamcap_ml.py).
+#
+# All mart models are materialised as TABLE for dashboard query performance.
+# They join intermediate pre-aggregations with base dimension tables — no mart
+# model scans the raw event stream directly.
+#
+# DAG summary:
+#   int_title_demand_signals
+#   int_title_provider_supply   ──► fct_title_licensing_score
+#   int_title_market_demand          │
+#                                    ├──► fct_title_acquisition_priority  (main output)
+#   fct_user_segments ──────────────►│
+#   fct_segment_title_demand ───────►│
+#
+#   base_objects + int_title_demand_signals ──► fct_genre_demand_profile
+#   int_title_market_demand + int_title_provider_supply ──► fct_market_demand_gap
+#   base_events_t3 + base_objects ──► fct_title_seasonality
+#   int_user_activity ──► fct_user_segments ──► fct_segment_title_demand
+# ──────────────────────────────────────────────────────────────────────────────
+
+models:
+
+  # ── fct_title_licensing_score ─────────────────────────────────────────────────
+  - name: fct_title_licensing_score
+    description: |
+      **Grain: one row per top-level title (movie or show)**
+
+      Core licensing ROI model. Combines aggregated demand signals with content
+      metadata and an estimated licensing cost proxy to produce per-title AVOD
+      and TVOD ROI scores and strategic supply-gap flags.
+
+      **Top-level-only filter:** `WHERE title_id = object_id` in the `objects` CTE
+      restricts the join to movies and shows. This is safe because
+      `cc_title:jwEntityId` in events always points to the top-level title —
+      even when an event fires on an episode page.
+
+      **AVOD demand score formula** (weights are tunable in the model):
+      ```
+      page_views × 1 + title_clicks × 2 + watchlist_adds × 5
+      + seenlist_adds × 3 + likes × 4 + trailer_plays × 2 + avod_clickouts × 10
+      ```
+      Weights reflect decreasing signal quality: a page view is cheap (any scroll),
+      a watchlist add requires deliberate intent, a clickout to a free offer is the
+      strongest AVOD intent measurable without actual play data.
+
+      **TVOD demand score formula:**
+      ```
+      rent_clickouts × 10 + buy_clickouts × 8 + cinema_clickouts × 6
+      ```
+
+      **Cost tier logic** approximates relative licensing cost using two observable
+      proxies — recency and IMDB popularity — because actual licensing prices are
+      not available:
+      - `'premium'`  → `release_year >= 2024` AND `imdb_votes > 100 000` (recent blockbuster)
+      - `'mid_tier'` → `release_year >= 2021` AND `imdb_votes > 50 000`
+      - `'catalog'`  → `imdb_votes > 10 000` (known older title)
+      - `'low_cost'` → everything else
+
+      Movies attract a 1.5× cost multiplier over shows because per-title movie
+      licensing costs more than a show licence of equivalent popularity.
+
+      **Underserved demand flags** (`is_avod_underserved`, `is_tvod_underserved`)
+      are true when demand > 0 AND no supply of the corresponding type was observed
+      in `int_title_provider_supply`. These are the core inputs to the "gap
+      opportunity" strategy in `fct_title_acquisition_priority`.
+    columns:
+      - name: title_entity_id
+        description: "Primary key. JustWatch top-level title ID. Join to `base_objects.object_id`. Foreign key to `fct_title_acquisition_priority`."
+      - name: avod_raw_score
+        description: "Absolute weighted AVOD engagement score. Sum of `page_views × 1 + title_clicks × 2 + watchlist_adds × 5 + seenlist_adds × 3 + likes × 4 + trailer_plays × 2 + avod_clickouts × 10`. Not normalised — use `avod_roi_score` for cross-title comparison."
+      - name: tvod_raw_score
+        description: "Absolute weighted TVOD transactional intent score. Sum of `rent_clickouts × 10 + buy_clickouts × 8 + cinema_clickouts × 6`."
+      - name: avod_roi_score
+        description: "AVOD raw score divided by `cost_multiplier`. Normalises demand by estimated cost, enabling fair comparison between a cheap catalog title with moderate demand and an expensive blockbuster with high demand."
+      - name: tvod_roi_score
+        description: "TVOD raw score divided by `cost_multiplier`."
+      - name: avod_score_market_adjusted
+        description: "AVOD raw score with a 10 % cross-market bonus per additional market beyond the first: `avod_raw_score × (1 + (market_count - 1) × 0.1)`. Rewards titles that are popular across multiple regions, improving licensing ROI."
+      - name: cost_tier
+        description: "Estimated licensing cost category: `'premium'`, `'mid_tier'`, `'catalog'`, `'low_cost'`. Based on `release_year` and `imdb_votes`. See model description for thresholds."
+      - name: cost_multiplier
+        description: "Numeric divisor used in ROI score calculation. Combines cost tier (1.0–4.0) and content type (movies × 1.5). Range: 1.0 (low-cost show) to 6.0 (premium movie)."
+      - name: market_count
+        description: "Count of distinct `app_locale` values with demand for this title, sourced from `int_title_market_demand`. Titles demanded in 3+ markets earn a +25 bonus in `fct_title_acquisition_priority`."
+      - name: has_avod_supply
+        description: "True if at least one `free` or `ads` clickout was observed for this title in `int_title_provider_supply`. Proxy for 'title is currently available on a free/ad-supported platform'."
+      - name: has_tvod_supply
+        description: "True if at least one `rent`, `buy`, or `cinema` clickout was observed."
+      - name: has_svod_supply
+        description: "True if at least one `flatrate` or `sports` clickout was observed. Indicates the title is on a subscription service — relevant for TVOD-to-AVOD candidate identification."
+      - name: avod_provider_count
+        description: "Number of distinct providers offering the title in a free/ads monetisation model."
+      - name: tvod_provider_count
+        description: "Number of distinct providers offering the title via rent/buy/cinema."
+      - name: is_avod_underserved
+        description: "True when `avod_raw_score > 0 AND has_avod_supply = false`. The title has observed AVOD demand but no current free/ads supply — a licensing gap opportunity."
+      - name: is_tvod_underserved
+        description: "True when `tvod_raw_score > 0 AND has_tvod_supply = false`. High transactional intent but no rent/buy supply observed."
+      - name: licensing_recommendation
+        description: |
+          Rule-based recommendation:
+          `'avod_priority'` — AVOD ROI ≥ TVOD ROI and AVOD > 0.
+          `'tvod_priority'` — TVOD ROI > AVOD ROI and TVOD > 0.
+          `'low_priority'` — no significant demand in either direction.
+      - name: demand_rank
+        description: "Overall engagement rank across all titles: `ROW_NUMBER() OVER (ORDER BY avod_raw_score + tvod_raw_score DESC)`. Rank 1 = highest absolute demand. Compare with `avod_roi_rank` which adjusts for cost."
+      - name: avod_roi_rank
+        description: "Rank by `avod_roi_score` descending. Titles with strong AVOD demand relative to their licensing cost rank high even if their absolute score is lower than a blockbuster."
+      - name: tvod_roi_rank
+        description: "Rank by `tvod_roi_score` descending."
+      - name: total_user_engagements
+        description: |
+          Sum of `unique_users` across all days from `int_title_demand_signals`.
+          **Note:** this double-counts users active on multiple days. It represents
+          user-day engagement count, not true unique users per title. Labelled
+          `total_user_engagements` (not `unique_users`) to communicate this clearly.
+
+  # ── fct_genre_demand_profile ─────────────────────────────────────────────────
+  - name: fct_genre_demand_profile
+    description: |
+      **Grain: one row per genre**
+
+      AVOD vs TVOD demand profile by content genre. Answers the question:
+      *"Which genres should we prioritise for our AVOD catalogue vs TVOD catalogue?"*
+
+      **LATERAL FLATTEN** is used to unnest `base_objects.genre_tmdb` (an ARRAY).
+      A title with genres `['Drama', 'Thriller']` appears in **both** the Drama row
+      and the Thriller row. Total demand values are therefore not additive across
+      genres — a single title contributes its full demand score to each genre it
+      belongs to.
+
+      **avod_share** is the primary strategic output: values close to 1.0 indicate
+      genres that drive primarily AVOD engagement (high-volume, rewatchable content
+      like Comedy and Reality TV), while values close to 0.0 indicate premium
+      TVOD-driven genres (e.g. Action blockbusters, Event films).
+
+      **avod_demand_per_title** and **tvod_demand_per_title** normalise total demand
+      by title count, revealing the per-title intensity rather than just the volume
+      driven by how many titles a genre contains.
+    columns:
+      - name: genre
+        description: "Primary key. Genre label from `base_objects.genre_tmdb` ARRAY, unnested via `LATERAL FLATTEN`. Values come from TMDB genre taxonomy (e.g. `'Drama'`, `'Action'`, `'Comedy'`)."
+      - name: title_count
+        description: "Number of distinct top-level titles in this genre with any demand signal."
+      - name: total_avod_demand
+        description: "Sum of `avod_raw_score` across all titles in this genre. Consistent weighting with `fct_title_licensing_score`."
+      - name: total_tvod_demand
+        description: "Sum of `tvod_raw_score` across all titles in this genre."
+      - name: avod_share
+        description: "AVOD demand as a fraction of total demand: `total_avod_demand / (total_avod_demand + total_tvod_demand)`. Range 0–1. High values indicate AVOD-friendly genres; low values indicate premium TVOD genres."
+      - name: avg_imdb_score
+        description: "Average IMDB score across titles in this genre. Higher-rated genres tend to command higher licensing costs."
+      - name: avod_demand_per_title
+        description: "Average AVOD demand score per title in this genre. Normalises for genre size — a large genre with many average titles vs a small genre with a few blockbusters."
+
+  # ── fct_market_demand_gap ─────────────────────────────────────────────────────
+  - name: fct_market_demand_gap
+    description: |
+      **Grain: one row per app_locale (user-chosen market)**
+
+      Market entry scorecard. Answers: *"If JustWatch launches AVOD in one country
+      first, which market has the highest demand-to-supply gap?"*
+
+      **Supply is global, not per-market.** The model flags a title as "underserved"
+      in a market when it has demand in that market AND no observed free/ads supply
+      globally (in `int_title_provider_supply`). This is an approximation — a title
+      may be available on a platform in Germany but not in France. More granular
+      supply data would require a provider catalogue feed not available in this dataset.
+
+      **avod_opportunity_score** is the market entry ranking signal:
+      `total_avod_demand × avod_gap_ratio`. A market with both high demand AND
+      a high fraction of un-supplied titles scores highest. A market with high demand
+      but most titles already available on free platforms scores lower.
+
+      **Source:** `int_title_market_demand` uses `app_locale`, correctly capturing
+      user intent by chosen market rather than physical IP location.
+    columns:
+      - name: app_locale
+        description: "Primary key. User's chosen market locale. E.g. `'de_DE'`, `'en_GB'`, `'fr_FR'`. Sourced from `int_title_market_demand.app_locale`."
+      - name: total_avod_demand
+        description: "Sum of `avod_demand` across all titles in this market."
+      - name: total_tvod_demand
+        description: "Sum of `tvod_demand` across all titles in this market."
+      - name: avod_gap_titles
+        description: "Count of distinct titles with AVOD demand but no observed free/ads supply globally. These are the titles JustWatch could fill for this market."
+      - name: avod_gap_ratio
+        description: "`avod_gap_titles / titles_with_avod_demand`. Fraction of demand-bearing titles that lack AVOD supply. Range 0–1. Higher = more of this market's desired content has no free option."
+      - name: avod_opportunity_score
+        description: "Primary market entry ranking score: `total_avod_demand × avod_gap_ratio`. Balances raw market size against the proportion of unmet demand. Use to rank markets for JustWatch AVOD launch order."
+      - name: avod_supply_coverage
+        description: "Inverse of `avod_gap_ratio`: fraction of AVOD-demand titles that already have free/ads supply. Useful for framing the competitive baseline in a market."
+
+  # ── fct_title_seasonality ─────────────────────────────────────────────────────
+  - name: fct_title_seasonality
+    description: |
+      **Grain: one row per (title_entity_id, week_start)**
+
+      Weekly demand trends across the November 2025 – January 2026 window
+      (T3 source table). The only model in the project that requires T3 —
+      T1 covers December only and cannot detect pre/post-Christmas trends.
+
+      **is_holiday_window** flags weeks that fall within Dec 20 – Jan 6, the
+      Christmas and New Year period. Comparing `weekly_avod_score` inside vs
+      outside this window reveals whether a title benefits from the holiday
+      viewing spike.
+
+      **avod_score_wow_change** is a LAG window function computed per title:
+      `weekly_avod_score - LAG(weekly_avod_score)`. Positive values indicate
+      growing demand; negative values indicate fading. Use this to identify
+      titles at peak demand (ideal licensing timing) vs titles on the downswing.
+
+      **Recommended warehouse:** `WH_TEAM_<N>_S` or larger. T3 is 128 M rows
+      and this model does a full scan plus GROUP BY before joining to objects.
+    columns:
+      - name: title_entity_id
+        description: "Part of the composite primary key."
+      - name: week_start
+        description: "Part of the composite primary key. Monday of the ISO week (`DATE_TRUNC('week', collector_tstamp)`)."
+      - name: weekly_avod_score
+        description: "AVOD demand score for this title in this week: `page_views × 1 + watchlist_adds × 5 + avod_clickouts × 10`. Same weights as `fct_title_licensing_score` for cross-model consistency."
+      - name: weekly_tvod_score
+        description: "TVOD demand score for this title in this week: `rent_clickouts × 10 + buy_clickouts × 8`."
+      - name: is_holiday_window
+        description: "True for weeks overlapping Dec 20 – Jan 6. Used to compare holiday vs non-holiday demand intensity."
+      - name: avod_score_wow_change
+        description: "Week-over-week change: `weekly_avod_score - LAG(weekly_avod_score) OVER (PARTITION BY title_entity_id ORDER BY week_start)`. NULL for the first week a title appears."
+
+  # ── fct_user_segments ─────────────────────────────────────────────────────────
+  - name: fct_user_segments
+    description: |
+      **Grain: one row per user_id**
+
+      Customer segmentation model. Assigns each user to one of five behavioural
+      segments based on their AVOD/TVOD intent scores and churn risk signal.
+      This is a **rule-based proxy** for the K-Means clustering in `streamcap_ml.py`.
+      Both approaches should produce similar segment distributions — the rule-based
+      version runs entirely in SQL for immediate use without Python infrastructure.
+
+      **Segment definitions:**
+      - `whale`      — Top-quartile TVOD intent (`tvod_quartile = 1`). These users actively rent/buy.
+                       Target with premium newly released content.
+      - `binger`     — Top-quartile AVOD intent (`avod_quartile = 1`). These users browse and save
+                       large amounts of content. Target with high-volume rewatchable series.
+      - `churn_risk` — Previously active (≥3 events in Dec 1–14) but recent daily activity
+                       dropped >50 % (Dec 15–31 daily rate < 50 % of Dec 1–14 daily rate).
+                       **`churn_risk` overrides `whale`/`binger`** — retention is more valuable
+                       than acquisition at the margin.
+      - `casual`     — Active users (≥2 events) below top-quartile on both intent dimensions.
+      - `dormant`    — Fewer than 2 total events. Excluded from `fct_segment_title_demand`.
+
+      **Intent score normalisation:** raw intent scores are per-active-day rates
+      (AVOD signals / `active_days`) then normalised to 0–100 using the observed
+      maximum as the ceiling. This prevents power users who visited many days from
+      inflating the scale.
+
+      **NTILE(4) partitioned by signal presence:** quartile computation is partitioned
+      by whether the user has any signal (`avod_intent_raw > 0`). This ensures users
+      with zero AVOD activity are not accidentally classified as quartile-1 AVOD users
+      when the overall distribution is skewed toward zero.
+    columns:
+      - name: user_id
+        description: "Primary key. Join to `int_user_activity` for raw signal counts, or to `fct_segment_title_demand` via `INNER JOIN` to filter events to non-dormant users."
+      - name: user_segment
+        description: |
+          One of: `'whale'`, `'binger'`, `'churn_risk'`, `'casual'`, `'dormant'`.
+          Priority order in the CASE expression:
+          1. `churn_risk` — evaluated first (retention value highest)
+          2. `whale` — top-quartile TVOD
+          3. `binger` — top-quartile AVOD
+          4. `casual` — any engagement, below top quartile
+          5. `dormant` — minimal events
+      - name: avod_intent_score
+        description: "Normalised AVOD intent score (0–100). Computed as `MIN(avod_intent_raw / max_avod_intent × 100, 100)`. Higher values indicate users who frequently browse free/ad-supported content."
+      - name: tvod_intent_score
+        description: "Normalised TVOD intent score (0–100). Higher values indicate users who regularly rent or buy content."
+      - name: churn_risk_flag
+        description: |
+          True when both conditions hold:
+          1. `recent_period_events / 17 < early_period_events / 14 × 0.5`
+             (recent daily rate less than half of early daily rate)
+          2. `early_period_events >= 3`
+             (user had meaningful early-month engagement — filters out low-signal users)
+      - name: avod_quartile
+        description: "NTILE(4) rank by `avod_intent_raw` within the group of users who have any AVOD signal. Quartile 1 = top 25 % of AVOD-active users. Used to determine `binger` segment."
+      - name: tvod_quartile
+        description: "NTILE(4) rank by `tvod_intent_raw` within the group of users who have any TVOD signal. Quartile 1 = top 25 % of TVOD-active users. Used to determine `whale` segment."
+
+  # ── fct_segment_title_demand ─────────────────────────────────────────────────
+  - name: fct_segment_title_demand
+    description: |
+      **Grain: one row per (title_entity_id, user_segment)**
+
+      Title demand broken down by customer segment. This is the bridge between
+      the customer segmentation layer and the content licensing layer.
+
+      **Why this model exists:** `fct_title_licensing_score` aggregates demand
+      across all users. This model reveals *who* is driving that demand. A title
+      with high overall AVOD demand driven primarily by Bingers is a better AVOD
+      acquisition candidate than a title driven by Whales (who prefer to pay to
+      watch, not watch free).
+
+      **INNER JOIN** with `fct_user_segments`: only events from non-dormant users
+      are included. Dormant users (`user_segment = 'dormant'`) are excluded from the
+      segment demand calculation — they had minimal engagement and would dilute the
+      segment signals.
+
+      **Downstream use in `fct_title_acquisition_priority`:**
+      - `binger_avod_demand` → AVOD gap opportunity flag and binger-driven bonus
+      - `whale_tvod_demand` → Whale segment TVOD demand
+      - `churn_risk_demand` → Churn prevention title flag (+15 bonus in composite score)
+    columns:
+      - name: title_entity_id
+        description: "Part of the composite primary key. Join to `fct_title_licensing_score.title_entity_id`."
+      - name: user_segment
+        description: "Part of the composite primary key. One of: `'whale'`, `'binger'`, `'churn_risk'`, `'casual'`. `'dormant'` is excluded by the INNER JOIN filter."
+      - name: avod_demand
+        description: "Weighted AVOD demand from users in this segment: `page_views × 1 + watchlist_adds × 5 + avod_clickouts × 10`."
+      - name: tvod_demand
+        description: "Weighted TVOD demand from users in this segment: `rent_clickouts × 10 + buy_clickouts × 8`."
+      - name: unique_users
+        description: "Distinct `user_id` count from this segment with any event for this title."
+
+  # ── fct_title_acquisition_priority ───────────────────────────────────────────
+  - name: fct_title_acquisition_priority
+    description: |
+      **Grain: one row per top-level title**
+
+      The StreamCap "Shopping List" — the primary output model of the entire
+      analytics pipeline. Combines all upstream signals into a single ranked table
+      that answers: *"Which titles should JustWatch license, for which audience,
+      and why?"*
+
+      **Sources joined:**
+      - `fct_title_licensing_score` — ROI scores, cost tier, supply flags
+      - `fct_segment_title_demand` (filtered by segment) — who wants each title
+      - Scarcity index computed inline: `1 / (1 + total_provider_count)`
+
+      **Composite acquisition score formula:**
+      ```
+      avod_roi_score + tvod_roi_score        ← base ROI (demand ÷ cost)
+      + 25 if market_count >= 3              ← cross-market arbitrage bonus
+      + 20 if is_avod_underserved            ← AVOD gap opportunity bonus
+      + 15 if tvod_raw_score > 0             ← TVOD-to-AVOD pipeline bonus
+           AND NOT has_avod_supply
+      + 15 if churn_risk_demand > 0          ← churn prevention bonus
+      + 10 if binger_avod_demand >           ← binger segment driven bonus
+           avod_raw_score × 0.3
+      ```
+      All bonus values are explicit and tunable — finance stakeholders can
+      adjust them based on strategic priorities without rewriting SQL.
+
+      **Three specialised ranks** are computed:
+      1. `acquisition_rank` — overall composite score rank
+      2. `churn_prevention_rank` — rank within `is_churn_prevention_title = true`
+         titles, sorted by `churn_risk_demand`
+      3. `tvod_to_avod_rank` — rank within TVOD-to-AVOD candidates sorted by
+         `tvod_raw_score`
+
+      **Strategic flags** map directly to the four business case narratives in
+      the StreamCap pitch:
+      - `is_avod_gap_opportunity` → "Underserved AVOD Demand" slide
+      - `is_tvod_to_avod_candidate` → "TVOD-to-AVOD Pipeline" slide
+      - `is_churn_prevention_title` → "Churn Prevention Acquisition" slide
+      - `is_cross_market_opportunity` → "Cross-Market Arbitrage" slide
+    columns:
+      - name: title_entity_id
+        description: "Primary key. Join to `base_objects.object_id` for additional metadata not carried in this model."
+      - name: acquisition_rank
+        description: "Primary sort column for the dashboard Shopping List. Rank 1 = highest composite acquisition score. Computed by `ROW_NUMBER() OVER (ORDER BY composite_acquisition_score DESC)`."
+      - name: composite_acquisition_score
+        description: |
+          Blended score combining ROI and strategic bonuses. See model description for
+          the full formula. **The bonuses are intentionally transparent** — each bonus
+          component is also available as an individual flag (`is_avod_gap_opportunity`,
+          etc.) so stakeholders can explain any title's score component by component.
+      - name: scarcity_index
+        description: |
+          `1.0 / (1.0 + total_provider_count)`. Range: approaching 1 (title on no platforms)
+          to approaching 0 (title on many platforms). Titles with high scarcity and high
+          demand are the lowest-cost acquisition opportunities: the market has not yet
+          recognised their value.
+      - name: binger_avod_demand
+        description: "AVOD demand score from the Binger segment only, sourced from `fct_segment_title_demand`. High binger demand with no free supply is the AVOD gap opportunity signal."
+      - name: whale_tvod_demand
+        description: "TVOD demand from the Whale segment. Whales actively pay to watch — their demand is the most reliable predictor of TVOD revenue potential."
+      - name: churn_risk_demand
+        description: "Combined AVOD + TVOD demand from the churn-risk segment. When > 0, the title is flagged `is_churn_prevention_title = true` and earns a +15 score bonus. Licensing this title may retain at-risk high-value users."
+      - name: is_avod_gap_opportunity
+        description: "`is_avod_underserved AND binger_avod_demand > 0`. Both conditions must be true: the title is underserved globally AND the Binger segment (the target AVOD audience) is specifically interested."
+      - name: is_tvod_to_avod_candidate
+        description: "`tvod_raw_score > 0 AND NOT has_avod_supply`. Users are willing to pay to watch it but no free option exists. Acquiring AVOD rights would be a market-disrupting move."
+      - name: is_churn_prevention_title
+        description: "`churn_risk_demand > 0`. At-risk users have shown specific interest in this title. Licensing it as a retention intervention may be cheaper than acquiring a new user to replace a churner."
+      - name: is_cross_market_opportunity
+        description: "`market_count >= 3`. Demanded in three or more distinct markets. Titles with broad geographic demand offer better licensing ROI because the same licence can serve multiple markets."
+      - name: is_binger_driven
+        description: "`binger_avod_demand > avod_raw_score × 0.3`. More than 30 % of this title's AVOD demand comes from the Binger segment. Confirms the title is a good AVOD catalogue fit, not just a general popularity spike."
+      - name: churn_prevention_rank
+        description: "Rank within `is_churn_prevention_title = true` titles, ordered by `churn_risk_demand DESC`. Use to prioritise the most impactful retention-driven acquisitions."
+      - name: tvod_to_avod_rank
+        description: "Rank within `is_tvod_to_avod_candidate = true` titles, ordered by `tvod_raw_score DESC`. The highest-ranked titles are those where users most strongly demonstrate willingness to pay, making free-rights acquisition the biggest value play."
