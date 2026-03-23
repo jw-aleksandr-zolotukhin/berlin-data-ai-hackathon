@@ -1,0 +1,62 @@
+contentType: chart
+name: "TVOD-to-AVOD Pipeline Candidates"
+slug: table-tvod-to-avod-candidates
+spaceSlug: streamcap
+tableName: fct_title_acquisition_priority
+version: 1
+chartConfig:
+  type: table
+  config:
+    showTableNames: false
+    hideRowNumbers: false
+    columns:
+      fct_title_acquisition_priority_title:
+        name: "Title"
+        frozen: true
+        visible: true
+      fct_title_acquisition_priority_object_type:
+        name: "Type"
+        visible: true
+      fct_title_acquisition_priority_tvod_roi_score:
+        name: "TVOD ROI Score"
+        visible: true
+        displayStyle: bar
+        color: "#FF6384"
+      fct_title_acquisition_priority_total_tvod_demand:
+        name: "TVOD Demand"
+        visible: true
+      fct_title_acquisition_priority_total_whale_tvod_demand:
+        name: "Whale Demand"
+        visible: true
+      fct_title_acquisition_priority_total_tvod_revenue:
+        name: "Est. TVOD Revenue"
+        visible: true
+      fct_title_acquisition_priority_cost_tier:
+        name: "Cost Tier"
+        visible: true
+metricQuery:
+  exploreName: fct_title_acquisition_priority
+  tableCalculations: []
+  dimensions:
+    - fct_title_acquisition_priority_title
+    - fct_title_acquisition_priority_object_type
+    - fct_title_acquisition_priority_tvod_roi_score
+    - fct_title_acquisition_priority_cost_tier
+  filters: {}
+  limit: 30
+  metrics:
+    - fct_title_acquisition_priority_total_tvod_demand
+    - fct_title_acquisition_priority_total_whale_tvod_demand
+    - fct_title_acquisition_priority_total_tvod_revenue
+  sorts:
+    - fieldId: fct_title_acquisition_priority_tvod_roi_score
+      descending: true
+tableConfig:
+  columnOrder:
+    - fct_title_acquisition_priority_title
+    - fct_title_acquisition_priority_object_type
+    - fct_title_acquisition_priority_tvod_roi_score
+    - fct_title_acquisition_priority_total_tvod_demand
+    - fct_title_acquisition_priority_total_whale_tvod_demand
+    - fct_title_acquisition_priority_total_tvod_revenue
+    - fct_title_acquisition_priority_cost_tier

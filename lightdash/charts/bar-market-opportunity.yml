@@ -1,0 +1,37 @@
+contentType: chart
+name: "Market AVOD Opportunity Score"
+slug: bar-market-opportunity
+spaceSlug: streamcap
+tableName: fct_market_demand_gap
+version: 1
+chartConfig:
+  type: cartesian
+  config:
+    eChartsConfig:
+      series:
+        - type: bar
+          encode:
+            xRef:
+              field: fct_market_demand_gap_max_opportunity_score
+            yRef:
+              field: fct_market_demand_gap_app_locale
+          color: "#7262FF"
+    layout:
+      flipAxes: true
+      xField: fct_market_demand_gap_app_locale
+      yField:
+        - fct_market_demand_gap_max_opportunity_score
+metricQuery:
+  exploreName: fct_market_demand_gap
+  tableCalculations: []
+  dimensions:
+    - fct_market_demand_gap_app_locale
+  filters: {}
+  limit: 20
+  metrics:
+    - fct_market_demand_gap_max_opportunity_score
+  sorts:
+    - fieldId: fct_market_demand_gap_max_opportunity_score
+      descending: true
+tableConfig:
+  columnOrder: []

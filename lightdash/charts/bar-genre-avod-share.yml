@@ -1,0 +1,40 @@
+contentType: chart
+name: "Genre AVOD vs TVOD Share"
+slug: bar-genre-avod-share
+spaceSlug: streamcap
+tableName: fct_genre_demand_profile
+version: 1
+chartConfig:
+  type: cartesian
+  config:
+    eChartsConfig:
+      series:
+        - type: bar
+          encode:
+            xRef:
+              field: fct_genre_demand_profile_avg_avod_share
+            yRef:
+              field: fct_genre_demand_profile_genre
+          name: "AVOD Share"
+          color: "#36A2EB"
+      xAxis:
+        - name: "AVOD Share (0=pure TVOD, 1=pure AVOD)"
+    layout:
+      flipAxes: true
+      xField: fct_genre_demand_profile_genre
+      yField:
+        - fct_genre_demand_profile_avg_avod_share
+metricQuery:
+  exploreName: fct_genre_demand_profile
+  tableCalculations: []
+  dimensions:
+    - fct_genre_demand_profile_genre
+  filters: {}
+  limit: 20
+  metrics:
+    - fct_genre_demand_profile_avg_avod_share
+  sorts:
+    - fieldId: fct_genre_demand_profile_avg_avod_share
+      descending: true
+tableConfig:
+  columnOrder: []

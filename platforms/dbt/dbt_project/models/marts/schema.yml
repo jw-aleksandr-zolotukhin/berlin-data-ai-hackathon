@@ -69,57 +69,409 @@ models:
       are true when demand > 0 AND no supply of the corresponding type was observed
       in `int_title_provider_supply`. These are the core inputs to the "gap
       opportunity" strategy in `fct_title_acquisition_priority`.
+    meta:
+      metrics:
+        avod_tvod_roi_ratio:
+          type: number
+          sql: "SUM(${TABLE}.avod_roi_score) / NULLIF(SUM(${TABLE}.tvod_roi_score), 0)"
+          label: "AVOD/TVOD ROI Ratio"
+          description: "Ratio of total AVOD ROI to TVOD ROI across all titles. > 1 means AVOD opportunity dominates."
+          round: 2
+          groups:
+            - "ROI Scores"
+        avod_underserved_pct:
+          type: number
+          sql: "COUNT(CASE WHEN ${TABLE}.is_avod_underserved THEN 1 END)::float / NULLIF(COUNT(*), 0) * 100"
+          label: "% Titles AVOD Underserved"
+          description: "Percentage of titles with AVOD demand but no current free/ads supply."
+          round: 1
+          groups:
+            - "Gap Opportunities"
+        avg_market_reach:
+          type: number
+          sql: "AVG(${TABLE}.market_count)"
+          label: "Avg Market Reach"
+          description: "Average number of markets demanding each title."
+          round: 1
+          groups:
+            - "Market Insights"
     columns:
       - name: title_entity_id
         description: "Primary key. JustWatch top-level title ID. Join to `base_objects.object_id`. Foreign key to `fct_title_acquisition_priority`."
+        meta:
+          dimension:
+            type: string
+            label: "Title ID"
+          metrics:
+            title_count:
+              type: count_distinct
+              label: "Titles with Demand"
+              description: "Count of distinct titles with any demand signal."
+              groups:
+                - "Volume"
+
+      - name: title
+        description: "Title name from base_objects."
+        meta:
+          dimension:
+            type: string
+            label: "Title"
+
+      - name: object_type
+        description: "Content type: 'movie' or 'show'."
+        meta:
+          dimension:
+            type: string
+            label: "Content Type"
+
+      - name: release_year
+        description: "Year of release from base_objects."
+        meta:
+          dimension:
+            type: number
+            label: "Release Year"
+
+      - name: original_language
+        description: "Original production language (ISO 639-1 code)."
+        meta:
+          dimension:
+            type: string
+            label: "Original Language"
+
+      - name: imdb_score
+        description: "IMDB rating score (0–10)."
+        meta:
+          dimension:
+            type: number
+            label: "IMDB Score"
+          metrics:
+            avg_imdb_score:
+              type: average
+              label: "Avg IMDB Score"
+              round: 2
+              groups:
+                - "Content Quality"
+
+      - name: imdb_votes
+        description: "IMDB vote count. Used as a popularity proxy in cost tier calculation."
+        meta:
+          dimension:
+            type: number
+            label: "IMDB Votes"
+          metrics:
+            avg_imdb_votes:
+              type: average
+              label: "Avg IMDB Votes"
+              round: 0
+              compact: "thousands"
+              groups:
+                - "Content Quality"
+
       - name: avod_raw_score
         description: "Absolute weighted AVOD engagement score. Sum of `page_views × 1 + title_clicks × 2 + watchlist_adds × 5 + seenlist_adds × 3 + likes × 4 + trailer_plays × 2 + avod_clickouts × 10`. Not normalised — use `avod_roi_score` for cross-title comparison."
+        meta:
+          dimension:
+            type: number
+            label: "AVOD Raw Score"
+          metrics:
+            total_avod_raw_score:
+              type: sum
+              label: "Total AVOD Demand Score"
+              description: "Sum of AVOD raw scores across all titles."
+              groups:
+                - "AVOD Demand"
+            avg_avod_raw_score:
+              type: average
+              label: "Avg AVOD Score per Title"
+              round: 1
+              groups:
+                - "AVOD Demand"
+
       - name: tvod_raw_score
         description: "Absolute weighted TVOD transactional intent score. Sum of `rent_clickouts × 10 + buy_clickouts × 8 + cinema_clickouts × 6`."
+        meta:
+          dimension:
+            type: number
+            label: "TVOD Raw Score"
+          metrics:
+            total_tvod_raw_score:
+              type: sum
+              label: "Total TVOD Demand Score"
+              description: "Sum of TVOD raw scores across all titles."
+              groups:
+                - "TVOD Demand"
+            avg_tvod_raw_score:
+              type: average
+              label: "Avg TVOD Score per Title"
+              round: 1
+              groups:
+                - "TVOD Demand"
+
       - name: avod_roi_score
         description: "AVOD raw score divided by `cost_multiplier`. Normalises demand by estimated cost, enabling fair comparison between a cheap catalog title with moderate demand and an expensive blockbuster with high demand."
+        meta:
+          dimension:
+            type: number
+            label: "AVOD ROI Score"
+          metrics:
+            total_avod_roi_score:
+              type: sum
+              label: "Total AVOD ROI Score"
+              groups:
+                - "ROI Scores"
+            avg_avod_roi_score:
+              type: average
+              label: "Avg AVOD ROI Score"
+              round: 2
+              groups:
+                - "ROI Scores"
+            max_avod_roi_score:
+              type: max
+              label: "Peak AVOD ROI Score"
+              round: 2
+              groups:
+                - "ROI Scores"
+
       - name: tvod_roi_score
         description: "TVOD raw score divided by `cost_multiplier`."
+        meta:
+          dimension:
+            type: number
+            label: "TVOD ROI Score"
+          metrics:
+            total_tvod_roi_score:
+              type: sum
+              label: "Total TVOD ROI Score"
+              groups:
+                - "ROI Scores"
+            avg_tvod_roi_score:
+              type: average
+              label: "Avg TVOD ROI Score"
+              round: 2
+              groups:
+                - "ROI Scores"
+            max_tvod_roi_score:
+              type: max
+              label: "Peak TVOD ROI Score"
+              round: 2
+              groups:
+                - "ROI Scores"
+
       - name: avod_score_market_adjusted
         description: "AVOD raw score with a 10 % cross-market bonus per additional market beyond the first: `avod_raw_score × (1 + (market_count - 1) × 0.1)`. Rewards titles that are popular across multiple regions, improving licensing ROI."
+        meta:
+          dimension:
+            type: number
+            label: "AVOD Score (Market-Adjusted)"
+          metrics:
+            avg_avod_score_market_adjusted:
+              type: average
+              label: "Avg Market-Adjusted AVOD Score"
+              round: 2
+              groups:
+                - "AVOD Demand"
+                - "Market Insights"
+
       - name: cost_tier
         description: "Estimated licensing cost category: `'premium'`, `'mid_tier'`, `'catalog'`, `'low_cost'`. Based on `release_year` and `imdb_votes`. See model description for thresholds."
+        meta:
+          dimension:
+            type: string
+            label: "Cost Tier"
+
       - name: cost_multiplier
         description: "Numeric divisor used in ROI score calculation. Combines cost tier (1.0–4.0) and content type (movies × 1.5). Range: 1.0 (low-cost show) to 6.0 (premium movie)."
+        meta:
+          dimension:
+            type: number
+            label: "Cost Multiplier"
+          metrics:
+            avg_cost_multiplier:
+              type: average
+              label: "Avg Cost Multiplier"
+              round: 2
+              groups:
+                - "Cost Model"
+
       - name: market_count
         description: "Count of distinct `app_locale` values with demand for this title, sourced from `int_title_market_demand`. Titles demanded in 3+ markets earn a +25 bonus in `fct_title_acquisition_priority`."
+        meta:
+          dimension:
+            type: number
+            label: "Market Count"
+          metrics:
+            avg_market_count:
+              type: average
+              label: "Avg Markets per Title"
+              round: 1
+              groups:
+                - "Market Insights"
+            max_market_count:
+              type: max
+              label: "Max Market Reach"
+              groups:
+                - "Market Insights"
+
       - name: has_avod_supply
         description: "True if at least one `free` or `ads` clickout was observed for this title in `int_title_provider_supply`. Proxy for 'title is currently available on a free/ad-supported platform'."
+        meta:
+          dimension:
+            type: boolean
+            label: "Has AVOD Supply"
+          metrics:
+            titles_with_avod_supply:
+              type: count
+              label: "Titles with AVOD Supply"
+              filters:
+                - has_avod_supply: "true"
+              groups:
+                - "Supply Coverage"
+
       - name: has_tvod_supply
         description: "True if at least one `rent`, `buy`, or `cinema` clickout was observed."
+        meta:
+          dimension:
+            type: boolean
+            label: "Has TVOD Supply"
+          metrics:
+            titles_with_tvod_supply:
+              type: count
+              label: "Titles with TVOD Supply"
+              filters:
+                - has_tvod_supply: "true"
+              groups:
+                - "Supply Coverage"
+
       - name: has_svod_supply
         description: "True if at least one `flatrate` or `sports` clickout was observed. Indicates the title is on a subscription service — relevant for TVOD-to-AVOD candidate identification."
+        meta:
+          dimension:
+            type: boolean
+            label: "Has SVOD Supply"
+          metrics:
+            titles_with_svod_supply:
+              type: count
+              label: "Titles with SVOD Supply"
+              filters:
+                - has_svod_supply: "true"
+              groups:
+                - "Supply Coverage"
+
       - name: avod_provider_count
         description: "Number of distinct providers offering the title in a free/ads monetisation model."
+        meta:
+          dimension:
+            type: number
+            label: "AVOD Provider Count"
+          metrics:
+            avg_avod_provider_count:
+              type: average
+              label: "Avg AVOD Providers per Title"
+              round: 1
+              groups:
+                - "Supply Coverage"
+
       - name: tvod_provider_count
         description: "Number of distinct providers offering the title via rent/buy/cinema."
+        meta:
+          dimension:
+            type: number
+            label: "TVOD Provider Count"
+          metrics:
+            avg_tvod_provider_count:
+              type: average
+              label: "Avg TVOD Providers per Title"
+              round: 1
+              groups:
+                - "Supply Coverage"
+
       - name: is_avod_underserved
         description: "True when `avod_raw_score > 0 AND has_avod_supply = false`. The title has observed AVOD demand but no current free/ads supply — a licensing gap opportunity."
+        meta:
+          dimension:
+            type: boolean
+            label: "AVOD Gap Opportunity"
+          metrics:
+            avod_gap_titles:
+              type: count
+              label: "AVOD Gap Titles"
+              description: "Count of titles with AVOD demand but no free/ads supply."
+              filters:
+                - is_avod_underserved: "true"
+              groups:
+                - "Gap Opportunities"
+
       - name: is_tvod_underserved
         description: "True when `tvod_raw_score > 0 AND has_tvod_supply = false`. High transactional intent but no rent/buy supply observed."
+        meta:
+          dimension:
+            type: boolean
+            label: "TVOD Gap Opportunity"
+          metrics:
+            tvod_gap_titles:
+              type: count
+              label: "TVOD Gap Titles"
+              description: "Count of titles with TVOD demand but no rent/buy supply."
+              filters:
+                - is_tvod_underserved: "true"
+              groups:
+                - "Gap Opportunities"
+
       - name: licensing_recommendation
         description: |
           Rule-based recommendation:
           `'avod_priority'` — AVOD ROI ≥ TVOD ROI and AVOD > 0.
           `'tvod_priority'` — TVOD ROI > AVOD ROI and TVOD > 0.
           `'low_priority'` — no significant demand in either direction.
+        meta:
+          dimension:
+            type: string
+            label: "Licensing Recommendation"
+
       - name: demand_rank
         description: "Overall engagement rank across all titles: `ROW_NUMBER() OVER (ORDER BY avod_raw_score + tvod_raw_score DESC)`. Rank 1 = highest absolute demand. Compare with `avod_roi_rank` which adjusts for cost."
+        meta:
+          dimension:
+            type: number
+            label: "Demand Rank"
+
       - name: avod_roi_rank
         description: "Rank by `avod_roi_score` descending. Titles with strong AVOD demand relative to their licensing cost rank high even if their absolute score is lower than a blockbuster."
+        meta:
+          dimension:
+            type: number
+            label: "AVOD ROI Rank"
+
       - name: tvod_roi_rank
         description: "Rank by `tvod_roi_score` descending."
+        meta:
+          dimension:
+            type: number
+            label: "TVOD ROI Rank"
+
       - name: total_user_engagements
         description: |
           Sum of `unique_users` across all days from `int_title_demand_signals`.
           **Note:** this double-counts users active on multiple days. It represents
           user-day engagement count, not true unique users per title. Labelled
           `total_user_engagements` (not `unique_users`) to communicate this clearly.
+        meta:
+          dimension:
+            type: number
+            label: "Total User Engagements"
+          metrics:
+            sum_user_engagements:
+              type: sum
+              label: "Total User Engagements"
+              compact: "thousands"
+              groups:
+                - "Volume"
+            avg_user_engagements:
+              type: average
+              label: "Avg User Engagements per Title"
+              round: 0
+              groups:
+                - "Volume"
 
   # ── fct_genre_demand_profile ─────────────────────────────────────────────────
   - name: fct_genre_demand_profile
@@ -146,18 +498,158 @@ models:
     columns:
       - name: genre
         description: "Primary key. Genre label from `base_objects.genre_tmdb` ARRAY, unnested via `LATERAL FLATTEN`. Values come from TMDB genre taxonomy (e.g. `'Drama'`, `'Action'`, `'Comedy'`)."
+        meta:
+          dimension:
+            type: string
+            label: "Genre"
+          metrics:
+            count_of_genre:
+              type: count
+              label: "Number of Genres"
+              groups:
+                - "Volume"
+
       - name: title_count
         description: "Number of distinct top-level titles in this genre with any demand signal."
+        meta:
+          dimension:
+            type: number
+            label: "Title Count"
+          metrics:
+            total_titles_in_genre:
+              type: sum
+              label: "Total Titles (across genres)"
+              description: "Sum of title counts — titles appearing in multiple genres are double-counted."
+              groups:
+                - "Volume"
+            avg_titles_per_genre:
+              type: average
+              label: "Avg Titles per Genre"
+              round: 0
+              groups:
+                - "Volume"
+
       - name: total_avod_demand
         description: "Sum of `avod_raw_score` across all titles in this genre. Consistent weighting with `fct_title_licensing_score`."
+        meta:
+          dimension:
+            type: number
+            label: "AVOD Demand"
+          metrics:
+            sum_avod_demand:
+              type: sum
+              label: "Total AVOD Demand"
+              compact: "thousands"
+              groups:
+                - "AVOD Demand"
+            avg_avod_demand_per_genre:
+              type: average
+              label: "Avg AVOD Demand per Genre"
+              round: 0
+              groups:
+                - "AVOD Demand"
+
       - name: total_tvod_demand
         description: "Sum of `tvod_raw_score` across all titles in this genre."
+        meta:
+          dimension:
+            type: number
+            label: "TVOD Demand"
+          metrics:
+            sum_tvod_demand:
+              type: sum
+              label: "Total TVOD Demand"
+              compact: "thousands"
+              groups:
+                - "TVOD Demand"
+            avg_tvod_demand_per_genre:
+              type: average
+              label: "Avg TVOD Demand per Genre"
+              round: 0
+              groups:
+                - "TVOD Demand"
+
       - name: avod_share
         description: "AVOD demand as a fraction of total demand: `total_avod_demand / (total_avod_demand + total_tvod_demand)`. Range 0–1. High values indicate AVOD-friendly genres; low values indicate premium TVOD genres."
+        meta:
+          dimension:
+            type: number
+            label: "AVOD Share (0–1)"
+          metrics:
+            avg_avod_share:
+              type: average
+              label: "Avg AVOD Share"
+              round: 2
+              description: "Average fraction of demand that is AVOD-oriented across genres."
+              groups:
+                - "AVOD Demand"
+            max_avod_share:
+              type: max
+              label: "Most AVOD-Dominant Genre Share"
+              round: 2
+              groups:
+                - "AVOD Demand"
+            min_avod_share:
+              type: min
+              label: "Most TVOD-Dominant Genre Share"
+              round: 2
+              groups:
+                - "TVOD Demand"
+
       - name: avg_imdb_score
         description: "Average IMDB score across titles in this genre. Higher-rated genres tend to command higher licensing costs."
+        meta:
+          dimension:
+            type: number
+            label: "Avg IMDB Score"
+          metrics:
+            overall_avg_imdb_score:
+              type: average
+              label: "Overall Avg IMDB Score"
+              round: 2
+              groups:
+                - "Content Quality"
+
       - name: avod_demand_per_title
         description: "Average AVOD demand score per title in this genre. Normalises for genre size — a large genre with many average titles vs a small genre with a few blockbusters."
+        meta:
+          dimension:
+            type: number
+            label: "AVOD Demand per Title"
+          metrics:
+            avg_avod_intensity:
+              type: average
+              label: "Avg AVOD Demand Intensity"
+              round: 1
+              description: "Average per-title AVOD demand across genres — reveals intensity vs volume."
+              groups:
+                - "AVOD Demand"
+            max_avod_intensity:
+              type: max
+              label: "Highest AVOD Demand Intensity"
+              round: 1
+              groups:
+                - "AVOD Demand"
+
+      - name: tvod_demand_per_title
+        description: "Average TVOD demand score per title in this genre."
+        meta:
+          dimension:
+            type: number
+            label: "TVOD Demand per Title"
+          metrics:
+            avg_tvod_intensity:
+              type: average
+              label: "Avg TVOD Demand Intensity"
+              round: 1
+              groups:
+                - "TVOD Demand"
+            max_tvod_intensity:
+              type: max
+              label: "Highest TVOD Demand Intensity"
+              round: 1
+              groups:
+                - "TVOD Demand"
 
   # ── fct_market_demand_gap ─────────────────────────────────────────────────────
   - name: fct_market_demand_gap
@@ -180,21 +672,173 @@ models:
 
       **Source:** `int_title_market_demand` uses `app_locale`, correctly capturing
       user intent by chosen market rather than physical IP location.
+    meta:
+      metrics:
+        total_markets:
+          type: number
+          sql: "COUNT(*)"
+          label: "Markets Analysed"
+          groups:
+            - "Market Overview"
     columns:
       - name: app_locale
         description: "Primary key. User's chosen market locale. E.g. `'de_DE'`, `'en_GB'`, `'fr_FR'`. Sourced from `int_title_market_demand.app_locale`."
+        meta:
+          dimension:
+            type: string
+            label: "Market (app_locale)"
+          metrics:
+            market_count:
+              type: count_distinct
+              label: "Number of Markets"
+              groups:
+                - "Market Overview"
+
       - name: total_avod_demand
         description: "Sum of `avod_demand` across all titles in this market."
+        meta:
+          dimension:
+            type: number
+            label: "Total AVOD Demand"
+          metrics:
+            sum_market_avod_demand:
+              type: sum
+              label: "Total AVOD Demand (all markets)"
+              compact: "millions"
+              groups:
+                - "AVOD Demand"
+            avg_market_avod_demand:
+              type: average
+              label: "Avg AVOD Demand per Market"
+              round: 0
+              groups:
+                - "AVOD Demand"
+            max_market_avod_demand:
+              type: max
+              label: "Highest AVOD Demand Market"
+              groups:
+                - "AVOD Demand"
+
       - name: total_tvod_demand
         description: "Sum of `tvod_demand` across all titles in this market."
+        meta:
+          dimension:
+            type: number
+            label: "Total TVOD Demand"
+          metrics:
+            sum_market_tvod_demand:
+              type: sum
+              label: "Total TVOD Demand (all markets)"
+              compact: "millions"
+              groups:
+                - "TVOD Demand"
+            avg_market_tvod_demand:
+              type: average
+              label: "Avg TVOD Demand per Market"
+              round: 0
+              groups:
+                - "TVOD Demand"
+
       - name: avod_gap_titles
         description: "Count of distinct titles with AVOD demand but no observed free/ads supply globally. These are the titles JustWatch could fill for this market."
+        meta:
+          dimension:
+            type: number
+            label: "AVOD Gap Titles Count"
+          metrics:
+            sum_avod_gap_titles:
+              type: sum
+              label: "Total AVOD Gap Titles"
+              description: "Total count of titles across all markets that have AVOD demand but no free/ads supply."
+              groups:
+                - "Gap Analysis"
+            avg_avod_gap_titles:
+              type: average
+              label: "Avg AVOD Gap Titles per Market"
+              round: 0
+              groups:
+                - "Gap Analysis"
+
       - name: avod_gap_ratio
         description: "`avod_gap_titles / titles_with_avod_demand`. Fraction of demand-bearing titles that lack AVOD supply. Range 0–1. Higher = more of this market's desired content has no free option."
+        meta:
+          dimension:
+            type: number
+            label: "AVOD Gap Ratio (0–1)"
+          metrics:
+            avg_avod_gap_ratio:
+              type: average
+              label: "Avg AVOD Gap Ratio"
+              round: 2
+              description: "Average fraction of desired titles with no free/ads supply across markets."
+              groups:
+                - "Gap Analysis"
+            max_avod_gap_ratio:
+              type: max
+              label: "Highest AVOD Gap Ratio"
+              round: 2
+              groups:
+                - "Gap Analysis"
+
       - name: avod_opportunity_score
         description: "Primary market entry ranking score: `total_avod_demand × avod_gap_ratio`. Balances raw market size against the proportion of unmet demand. Use to rank markets for JustWatch AVOD launch order."
+        meta:
+          dimension:
+            type: number
+            label: "AVOD Opportunity Score"
+          metrics:
+            sum_opportunity_score:
+              type: sum
+              label: "Total Opportunity Score"
+              groups:
+                - "Market Ranking"
+            avg_opportunity_score:
+              type: average
+              label: "Avg Opportunity Score"
+              round: 0
+              groups:
+                - "Market Ranking"
+            max_opportunity_score:
+              type: max
+              label: "Top Market Opportunity Score"
+              groups:
+                - "Market Ranking"
+
       - name: avod_supply_coverage
         description: "Inverse of `avod_gap_ratio`: fraction of AVOD-demand titles that already have free/ads supply. Useful for framing the competitive baseline in a market."
+        meta:
+          dimension:
+            type: number
+            label: "AVOD Supply Coverage (0–1)"
+          metrics:
+            avg_supply_coverage:
+              type: average
+              label: "Avg AVOD Supply Coverage"
+              round: 2
+              description: "Average fraction of AVOD-desired titles already covered by free/ads supply."
+              groups:
+                - "Supply Coverage"
+
+      - name: total_unique_users
+        description: "Sum of distinct users with any demand signal in this market."
+        meta:
+          dimension:
+            type: number
+            label: "Total Unique Users"
+          metrics:
+            sum_market_users:
+              type: sum
+              label: "Total Users Across Markets"
+              compact: "millions"
+              groups:
+                - "Market Overview"
+            avg_users_per_market:
+              type: average
+              label: "Avg Users per Market"
+              round: 0
+              compact: "thousands"
+              groups:
+                - "Market Overview"
 
   # ── fct_title_seasonality ─────────────────────────────────────────────────────
   - name: fct_title_seasonality
@@ -217,19 +861,248 @@ models:
 
       **Recommended warehouse:** `WH_TEAM_<N>_S` or larger. T3 is 128 M rows
       and this model does a full scan plus GROUP BY before joining to objects.
+    meta:
+      metrics:
+        holiday_avod_lift_pct:
+          type: number
+          sql: |
+            (AVG(CASE WHEN ${TABLE}.is_holiday_window THEN ${TABLE}.weekly_avod_score END)
+             - AVG(CASE WHEN NOT ${TABLE}.is_holiday_window THEN ${TABLE}.weekly_avod_score END))
+            / NULLIF(AVG(CASE WHEN NOT ${TABLE}.is_holiday_window THEN ${TABLE}.weekly_avod_score END), 0) * 100
+          label: "Holiday AVOD Lift %"
+          description: "Percentage uplift in weekly AVOD score during holiday window vs non-holiday."
+          round: 1
+          groups:
+            - "Seasonality"
     columns:
       - name: title_entity_id
         description: "Part of the composite primary key."
+        meta:
+          dimension:
+            type: string
+            label: "Title ID"
+          metrics:
+            unique_titles_weekly:
+              type: count_distinct
+              label: "Unique Titles (Weekly)"
+              groups:
+                - "Volume"
+
       - name: week_start
         description: "Part of the composite primary key. Monday of the ISO week (`DATE_TRUNC('week', collector_tstamp)`)."
-      - name: weekly_avod_score
-        description: "AVOD demand score for this title in this week: `page_views × 1 + watchlist_adds × 5 + avod_clickouts × 10`. Same weights as `fct_title_licensing_score` for cross-model consistency."
-      - name: weekly_tvod_score
-        description: "TVOD demand score for this title in this week: `rent_clickouts × 10 + buy_clickouts × 8`."
+        meta:
+          dimension:
+            type: date
+            label: "Week"
+            time_intervals:
+              - WEEK
+              - MONTH
+
+      - name: title
+        description: "Title name from base_objects."
+        meta:
+          dimension:
+            type: string
+            label: "Title"
+
+      - name: object_type
+        description: "Content type: 'movie' or 'show'."
+        meta:
+          dimension:
+            type: string
+            label: "Content Type"
+
+      - name: release_year
+        description: "Year of release."
+        meta:
+          dimension:
+            type: number
+            label: "Release Year"
+
+      - name: original_language
+        description: "Original production language (ISO 639-1 code)."
+        meta:
+          dimension:
+            type: string
+            label: "Original Language"
+
       - name: is_holiday_window
         description: "True for weeks overlapping Dec 20 – Jan 6. Used to compare holiday vs non-holiday demand intensity."
+        meta:
+          dimension:
+            type: boolean
+            label: "Holiday Window"
+          metrics:
+            holiday_weeks:
+              type: count
+              label: "Holiday Window Observations"
+              filters:
+                - is_holiday_window: "true"
+              groups:
+                - "Seasonality"
+
+      - name: weekly_avod_score
+        description: "AVOD demand score for this title in this week: `page_views × 1 + watchlist_adds × 5 + avod_clickouts × 10`. Same weights as `fct_title_licensing_score` for cross-model consistency."
+        meta:
+          dimension:
+            type: number
+            label: "Weekly AVOD Score"
+          metrics:
+            total_weekly_avod_score:
+              type: sum
+              label: "Total Weekly AVOD Score"
+              compact: "millions"
+              groups:
+                - "AVOD Demand"
+            avg_weekly_avod_score:
+              type: average
+              label: "Avg Weekly AVOD Score"
+              round: 1
+              groups:
+                - "AVOD Demand"
+            max_weekly_avod_score:
+              type: max
+              label: "Peak Weekly AVOD Score"
+              groups:
+                - "AVOD Demand"
+
+      - name: weekly_tvod_score
+        description: "TVOD demand score for this title in this week: `rent_clickouts × 10 + buy_clickouts × 8`."
+        meta:
+          dimension:
+            type: number
+            label: "Weekly TVOD Score"
+          metrics:
+            total_weekly_tvod_score:
+              type: sum
+              label: "Total Weekly TVOD Score"
+              compact: "millions"
+              groups:
+                - "TVOD Demand"
+            avg_weekly_tvod_score:
+              type: average
+              label: "Avg Weekly TVOD Score"
+              round: 1
+              groups:
+                - "TVOD Demand"
+
+      - name: page_views
+        description: "Weekly page view count for this title."
+        meta:
+          dimension:
+            type: number
+            label: "Page Views"
+          metrics:
+            total_page_views:
+              type: sum
+              label: "Total Page Views"
+              compact: "millions"
+              groups:
+                - "Engagement Signals"
+            avg_weekly_page_views:
+              type: average
+              label: "Avg Weekly Page Views"
+              round: 0
+              groups:
+                - "Engagement Signals"
+
+      - name: watchlist_adds
+        description: "Weekly watchlist add count for this title."
+        meta:
+          dimension:
+            type: number
+            label: "Watchlist Adds"
+          metrics:
+            total_watchlist_adds:
+              type: sum
+              label: "Total Watchlist Adds"
+              compact: "thousands"
+              groups:
+                - "Engagement Signals"
+
+      - name: avod_clickouts
+        description: "Weekly free/ads clickout count."
+        meta:
+          dimension:
+            type: number
+            label: "AVOD Clickouts"
+          metrics:
+            total_avod_clickouts:
+              type: sum
+              label: "Total AVOD Clickouts"
+              compact: "thousands"
+              groups:
+                - "AVOD Demand"
+
+      - name: tvod_clickouts
+        description: "Weekly rent+buy+cinema clickout count."
+        meta:
+          dimension:
+            type: number
+            label: "TVOD Clickouts"
+          metrics:
+            total_tvod_clickouts:
+              type: sum
+              label: "Total TVOD Clickouts"
+              compact: "thousands"
+              groups:
+                - "TVOD Demand"
+
+      - name: unique_users
+        description: "Distinct user count with any event for this title in this week."
+        meta:
+          dimension:
+            type: number
+            label: "Unique Users (Weekly)"
+          metrics:
+            total_unique_users_weekly:
+              type: sum
+              label: "Total Weekly User Engagements"
+              compact: "millions"
+              groups:
+                - "Volume"
+            avg_weekly_unique_users:
+              type: average
+              label: "Avg Weekly Unique Users"
+              round: 0
+              groups:
+                - "Volume"
+
+      - name: market_count
+        description: "Count of distinct markets with activity for this title in this week."
+        meta:
+          dimension:
+            type: number
+            label: "Markets (Weekly)"
+          metrics:
+            avg_weekly_markets:
+              type: average
+              label: "Avg Weekly Market Reach"
+              round: 1
+              groups:
+                - "Market Insights"
+
       - name: avod_score_wow_change
         description: "Week-over-week change: `weekly_avod_score - LAG(weekly_avod_score) OVER (PARTITION BY title_entity_id ORDER BY week_start)`. NULL for the first week a title appears."
+        meta:
+          dimension:
+            type: number
+            label: "WoW AVOD Score Change"
+          metrics:
+            avg_wow_change:
+              type: average
+              label: "Avg WoW AVOD Change"
+              round: 1
+              description: "Average week-over-week AVOD score change. Positive = demand growing."
+              groups:
+                - "Seasonality"
+            sum_positive_wow:
+              type: sum
+              label: "Total Positive WoW Changes"
+              filters:
+                - avod_score_wow_change: "> 0"
+              groups:
+                - "Seasonality"
 
   # ── fct_user_segments ─────────────────────────────────────────────────────────
   - name: fct_user_segments
@@ -263,9 +1136,44 @@ models:
       by whether the user has any signal (`avod_intent_raw > 0`). This ensures users
       with zero AVOD activity are not accidentally classified as quartile-1 AVOD users
       when the overall distribution is skewed toward zero.
+    meta:
+      metrics:
+        churn_risk_rate:
+          type: number
+          sql: "COUNT(CASE WHEN ${TABLE}.user_segment = 'churn_risk' THEN 1 END)::float / NULLIF(COUNT(*), 0) * 100"
+          label: "Churn Risk Rate %"
+          description: "Percentage of all users classified as churn risk."
+          round: 1
+          groups:
+            - "Churn Risk"
+        whale_rate:
+          type: number
+          sql: "COUNT(CASE WHEN ${TABLE}.user_segment = 'whale' THEN 1 END)::float / NULLIF(COUNT(*), 0) * 100"
+          label: "Whale User Rate %"
+          round: 1
+          groups:
+            - "User Segments"
+        binger_rate:
+          type: number
+          sql: "COUNT(CASE WHEN ${TABLE}.user_segment = 'binger' THEN 1 END)::float / NULLIF(COUNT(*), 0) * 100"
+          label: "Binger User Rate %"
+          round: 1
+          groups:
+            - "User Segments"
     columns:
       - name: user_id
         description: "Primary key. Join to `int_user_activity` for raw signal counts, or to `fct_segment_title_demand` via `INNER JOIN` to filter events to non-dormant users."
+        meta:
+          dimension:
+            type: string
+            label: "User ID"
+          metrics:
+            total_users:
+              type: count_distinct
+              label: "Total Users"
+              groups:
+                - "User Segments"
+
       - name: user_segment
         description: |
           One of: `'whale'`, `'binger'`, `'churn_risk'`, `'casual'`, `'dormant'`.
@@ -275,10 +1183,94 @@ models:
           3. `binger` — top-quartile AVOD
           4. `casual` — any engagement, below top quartile
           5. `dormant` — minimal events
+        meta:
+          dimension:
+            type: string
+            label: "User Segment"
+          metrics:
+            whale_users:
+              type: count
+              label: "Whale Users"
+              filters:
+                - user_segment: "whale"
+              groups:
+                - "User Segments"
+            binger_users:
+              type: count
+              label: "Binger Users"
+              filters:
+                - user_segment: "binger"
+              groups:
+                - "User Segments"
+            churn_risk_users:
+              type: count
+              label: "Churn Risk Users"
+              filters:
+                - user_segment: "churn_risk"
+              groups:
+                - "Churn Risk"
+            casual_users:
+              type: count
+              label: "Casual Users"
+              filters:
+                - user_segment: "casual"
+              groups:
+                - "User Segments"
+            dormant_users:
+              type: count
+              label: "Dormant Users"
+              filters:
+                - user_segment: "dormant"
+              groups:
+                - "User Segments"
+
+      - name: primary_market
+        description: "The `app_locale` value this user used most frequently."
+        meta:
+          dimension:
+            type: string
+            label: "Primary Market"
+
       - name: avod_intent_score
         description: "Normalised AVOD intent score (0–100). Computed as `MIN(avod_intent_raw / max_avod_intent × 100, 100)`. Higher values indicate users who frequently browse free/ad-supported content."
+        meta:
+          dimension:
+            type: number
+            label: "AVOD Intent Score"
+          metrics:
+            avg_avod_intent:
+              type: average
+              label: "Avg AVOD Intent Score"
+              round: 1
+              groups:
+                - "User Intent"
+            median_avod_intent:
+              type: median
+              label: "Median AVOD Intent Score"
+              round: 1
+              groups:
+                - "User Intent"
+
       - name: tvod_intent_score
         description: "Normalised TVOD intent score (0–100). Higher values indicate users who regularly rent or buy content."
+        meta:
+          dimension:
+            type: number
+            label: "TVOD Intent Score"
+          metrics:
+            avg_tvod_intent:
+              type: average
+              label: "Avg TVOD Intent Score"
+              round: 1
+              groups:
+                - "User Intent"
+            median_tvod_intent:
+              type: median
+              label: "Median TVOD Intent Score"
+              round: 1
+              groups:
+                - "User Intent"
+
       - name: churn_risk_flag
         description: |
           True when both conditions hold:
@@ -286,10 +1278,85 @@ models:
              (recent daily rate less than half of early daily rate)
           2. `early_period_events >= 3`
              (user had meaningful early-month engagement — filters out low-signal users)
+        meta:
+          dimension:
+            type: boolean
+            label: "Churn Risk Flag"
+          metrics:
+            users_at_churn_risk:
+              type: count
+              label: "Users at Churn Risk"
+              filters:
+                - churn_risk_flag: "true"
+              groups:
+                - "Churn Risk"
+
       - name: avod_quartile
         description: "NTILE(4) rank by `avod_intent_raw` within the group of users who have any AVOD signal. Quartile 1 = top 25 % of AVOD-active users. Used to determine `binger` segment."
+        meta:
+          dimension:
+            type: number
+            label: "AVOD Quartile"
+
       - name: tvod_quartile
         description: "NTILE(4) rank by `tvod_intent_raw` within the group of users who have any TVOD signal. Quartile 1 = top 25 % of TVOD-active users. Used to determine `whale` segment."
+        meta:
+          dimension:
+            type: number
+            label: "TVOD Quartile"
+
+      - name: active_days
+        description: "Distinct calendar dates with at least one event."
+        meta:
+          dimension:
+            type: number
+            label: "Active Days"
+          metrics:
+            avg_active_days:
+              type: average
+              label: "Avg Active Days per User"
+              round: 1
+              groups:
+                - "User Engagement"
+            max_active_days:
+              type: max
+              label: "Max Active Days"
+              groups:
+                - "User Engagement"
+
+      - name: total_sessions
+        description: "Distinct `session_id` count across all events for this user."
+        meta:
+          dimension:
+            type: number
+            label: "Total Sessions"
+          metrics:
+            avg_sessions_per_user:
+              type: average
+              label: "Avg Sessions per User"
+              round: 1
+              groups:
+                - "User Engagement"
+
+      - name: unique_titles_engaged
+        description: "Distinct `title_entity_id` count for this user. Content breadth signal."
+        meta:
+          dimension:
+            type: number
+            label: "Unique Titles Engaged"
+          metrics:
+            avg_titles_per_user:
+              type: average
+              label: "Avg Titles per User"
+              round: 1
+              groups:
+                - "User Engagement"
+            sum_title_engagements:
+              type: sum
+              label: "Total Title Engagements"
+              compact: "millions"
+              groups:
+                - "User Engagement"
 
   # ── fct_segment_title_demand ─────────────────────────────────────────────────
   - name: fct_segment_title_demand
@@ -314,17 +1381,623 @@ models:
       - `binger_avod_demand` → AVOD gap opportunity flag and binger-driven bonus
       - `whale_tvod_demand` → Whale segment TVOD demand
       - `churn_risk_demand` → Churn prevention title flag (+15 bonus in composite score)
+    meta:
+      metrics:
+        binger_avod_vs_total:
+          type: number
+          sql: |
+            SUM(CASE WHEN ${TABLE}.user_segment = 'binger' THEN ${TABLE}.avod_demand END)
+            / NULLIF(SUM(${TABLE}.avod_demand), 0) * 100
+          label: "Binger AVOD Share %"
+          description: "Percentage of all AVOD demand driven by Binger segment users."
+          round: 1
+          groups:
+            - "Segment Analysis"
+        whale_tvod_vs_total:
+          type: number
+          sql: |
+            SUM(CASE WHEN ${TABLE}.user_segment = 'whale' THEN ${TABLE}.tvod_demand END)
+            / NULLIF(SUM(${TABLE}.tvod_demand), 0) * 100
+          label: "Whale TVOD Share %"
+          description: "Percentage of all TVOD demand driven by Whale segment users."
+          round: 1
+          groups:
+            - "Segment Analysis"
     columns:
       - name: title_entity_id
         description: "Part of the composite primary key. Join to `fct_title_licensing_score.title_entity_id`."
+        meta:
+          dimension:
+            type: string
+            label: "Title ID"
+          metrics:
+            unique_titles_by_segment:
+              type: count_distinct
+              label: "Unique Titles with Segment Demand"
+              groups:
+                - "Volume"
+
       - name: user_segment
         description: "Part of the composite primary key. One of: `'whale'`, `'binger'`, `'churn_risk'`, `'casual'`. `'dormant'` is excluded by the INNER JOIN filter."
+        meta:
+          dimension:
+            type: string
+            label: "User Segment"
+
+      - name: title
+        description: "Title name from base_objects."
+        meta:
+          dimension:
+            type: string
+            label: "Title"
+
+      - name: object_type
+        description: "Content type: 'movie' or 'show'."
+        meta:
+          dimension:
+            type: string
+            label: "Content Type"
+
+      - name: release_year
+        description: "Year of release."
+        meta:
+          dimension:
+            type: number
+            label: "Release Year"
+
+      - name: imdb_score
+        description: "IMDB rating for this title."
+        meta:
+          dimension:
+            type: number
+            label: "IMDB Score"
+          metrics:
+            avg_imdb_score_segment:
+              type: average
+              label: "Avg IMDB Score"
+              round: 2
+              groups:
+                - "Content Quality"
+
       - name: avod_demand
         description: "Weighted AVOD demand from users in this segment: `page_views × 1 + watchlist_adds × 5 + avod_clickouts × 10`."
+        meta:
+          dimension:
+            type: number
+            label: "AVOD Demand (segment)"
+          metrics:
+            total_segment_avod_demand:
+              type: sum
+              label: "Total AVOD Demand by Segment"
+              compact: "thousands"
+              groups:
+                - "AVOD Demand"
+            avg_segment_avod_demand:
+              type: average
+              label: "Avg AVOD Demand per Title-Segment"
+              round: 1
+              groups:
+                - "AVOD Demand"
+
       - name: tvod_demand
         description: "Weighted TVOD demand from users in this segment: `rent_clickouts × 10 + buy_clickouts × 8`."
+        meta:
+          dimension:
+            type: number
+            label: "TVOD Demand (segment)"
+          metrics:
+            total_segment_tvod_demand:
+              type: sum
+              label: "Total TVOD Demand by Segment"
+              compact: "thousands"
+              groups:
+                - "TVOD Demand"
+            avg_segment_tvod_demand:
+              type: average
+              label: "Avg TVOD Demand per Title-Segment"
+              round: 1
+              groups:
+                - "TVOD Demand"
+
       - name: unique_users
         description: "Distinct `user_id` count from this segment with any event for this title."
+        meta:
+          dimension:
+            type: number
+            label: "Unique Segment Users"
+          metrics:
+            total_segment_users:
+              type: sum
+              label: "Total Segment User Interactions"
+              compact: "thousands"
+              groups:
+                - "Volume"
+            avg_segment_users_per_title:
+              type: average
+              label: "Avg Users per Title-Segment"
+              round: 1
+              groups:
+                - "Volume"
+
+  # ── fct_title_revenue_estimate ───────────────────────────────────────────────
+  - name: fct_title_revenue_estimate
+    description: |
+      **Grain: one row per top-level title**
+
+      Translates demand signals into estimated dollar revenue potential using
+      industry benchmark assumptions from `seeds/revenue_benchmarks.csv`.
+
+      **AVOD revenue logic:**
+      `avod_clickouts × clickout_to_view_conversion × estimated_view_hours × ecpm_usd / 1000`
+
+      **TVOD revenue logic:**
+      `rent_clickouts × margin_per_rent_usd + buy_clickouts × margin_per_buy_usd`
+
+      **ROI:** `(avod_revenue_usd + tvod_revenue_usd) / cost_multiplier`
+
+      Use `acquisition_tier` to quickly filter to the top 10% or 25% of titles
+      by ROI. Use `monetization_signal` for a plain-English licensing recommendation.
+    meta:
+      metrics:
+        total_estimated_revenue:
+          type: number
+          sql: "SUM(${TABLE}.total_revenue_usd)"
+          label: "Total Estimated Revenue"
+          format: "usd"
+          compact: "thousands"
+          round: 0
+          groups:
+            - "Revenue Estimates"
+        avg_roi_per_title:
+          type: number
+          sql: "AVG(${TABLE}.roi_usd)"
+          label: "Avg ROI per Title"
+          format: "usd"
+          round: 2
+          groups:
+            - "Revenue Estimates"
+        avod_revenue_share_pct:
+          type: number
+          sql: "SUM(${TABLE}.avod_revenue_usd) / NULLIF(SUM(${TABLE}.total_revenue_usd), 0) * 100"
+          label: "AVOD Revenue Share %"
+          round: 1
+          groups:
+            - "Revenue Estimates"
+    columns:
+      - name: title_entity_id
+        description: "Primary key. JustWatch top-level title ID."
+        meta:
+          dimension:
+            type: string
+            label: "Title ID"
+          metrics:
+            title_count:
+              type: count_distinct
+              label: "Titles with Revenue Estimate"
+              groups:
+                - "Volume"
+
+      - name: title
+        description: "Title name."
+        meta:
+          dimension:
+            type: string
+            label: "Title"
+
+      - name: object_type
+        description: "Content type: 'movie' or 'show'."
+        meta:
+          dimension:
+            type: string
+            label: "Content Type"
+
+      - name: release_year
+        description: "Year of original release."
+        meta:
+          dimension:
+            type: number
+            label: "Release Year"
+
+      - name: original_language
+        description: "Original production language (ISO 639-1 code)."
+        meta:
+          dimension:
+            type: string
+            label: "Original Language"
+
+      - name: imdb_score
+        description: "IMDB rating score (0–10)."
+        meta:
+          dimension:
+            type: number
+            label: "IMDB Score"
+          metrics:
+            avg_imdb_score:
+              type: average
+              label: "Avg IMDB Score"
+              round: 2
+              groups:
+                - "Content Quality"
+
+      - name: cost_tier
+        description: "Estimated licensing cost category: 'premium', 'mid_tier', 'catalog', 'low_cost'."
+        meta:
+          dimension:
+            type: string
+            label: "Cost Tier"
+
+      - name: cost_multiplier
+        description: "Numeric licensing cost proxy (1.0–6.0). Divides raw score to produce ROI."
+        meta:
+          dimension:
+            type: number
+            label: "Cost Multiplier"
+          metrics:
+            avg_cost_multiplier:
+              type: average
+              label: "Avg Cost Multiplier"
+              round: 2
+              groups:
+                - "Cost Model"
+
+      - name: acquisition_tier
+        description: "ROI percentile bucket: 'top_10pct', 'top_25pct', 'mid', 'tail'."
+        meta:
+          dimension:
+            type: string
+            label: "Acquisition Tier"
+
+      - name: dominant_monetization
+        description: "Dominant monetization model from clickout mix: 'avod', 'tvod', 'svod', 'mixed', 'unknown'."
+        meta:
+          dimension:
+            type: string
+            label: "Dominant Monetization"
+
+      - name: monetization_signal
+        description: "Plain-English licensing recommendation: 'LICENSE FOR AVOD', 'LICENSE FOR TVOD', 'SKIP - ON SVOD', 'MIXED DEMAND', 'NO CLICKOUT DATA'."
+        meta:
+          dimension:
+            type: string
+            label: "Monetization Signal"
+
+      - name: licensing_recommendation
+        description: "Rule-based recommendation: 'avod_priority', 'tvod_priority', 'low_priority'."
+        meta:
+          dimension:
+            type: string
+            label: "Licensing Recommendation"
+
+      - name: has_avod_supply
+        description: "True if at least one free/ads clickout observed."
+        meta:
+          dimension:
+            type: boolean
+            label: "Has AVOD Supply"
+
+      - name: has_tvod_supply
+        description: "True if at least one rent/buy/cinema clickout observed."
+        meta:
+          dimension:
+            type: boolean
+            label: "Has TVOD Supply"
+
+      - name: has_svod_supply
+        description: "True if at least one flatrate/sports clickout observed."
+        meta:
+          dimension:
+            type: boolean
+            label: "Has SVOD Supply"
+
+      - name: is_avod_underserved
+        description: "AVOD demand exists but no free/ads supply observed."
+        meta:
+          dimension:
+            type: boolean
+            label: "AVOD Underserved"
+          metrics:
+            avod_gap_titles:
+              type: count
+              label: "AVOD Gap Titles"
+              filters:
+                - is_avod_underserved: "true"
+              groups:
+                - "Gap Opportunities"
+
+      - name: is_tvod_underserved
+        description: "TVOD demand exists but no rent/buy supply observed."
+        meta:
+          dimension:
+            type: boolean
+            label: "TVOD Underserved"
+          metrics:
+            tvod_gap_titles:
+              type: count
+              label: "TVOD Gap Titles"
+              filters:
+                - is_tvod_underserved: "true"
+              groups:
+                - "Gap Opportunities"
+
+      - name: is_tvod_only
+        description: "Title has only TVOD demand with no AVOD or SVOD clickouts."
+        meta:
+          dimension:
+            type: boolean
+            label: "TVOD Only"
+
+      - name: is_svod_exclusive
+        description: "Title is only clicked through to subscription services."
+        meta:
+          dimension:
+            type: boolean
+            label: "SVOD Exclusive"
+
+      - name: market_count
+        description: "Count of distinct markets with demand for this title."
+        meta:
+          dimension:
+            type: number
+            label: "Market Count"
+          metrics:
+            avg_market_count:
+              type: average
+              label: "Avg Market Count"
+              round: 1
+              groups:
+                - "Market Insights"
+
+      - name: avod_raw_score
+        description: "Absolute weighted AVOD engagement score."
+        meta:
+          dimension:
+            type: number
+            label: "AVOD Raw Score"
+          metrics:
+            total_avod_raw_score:
+              type: sum
+              label: "Total AVOD Demand Score"
+              compact: "thousands"
+              groups:
+                - "Demand Signals"
+
+      - name: tvod_raw_score
+        description: "Absolute weighted TVOD transactional intent score."
+        meta:
+          dimension:
+            type: number
+            label: "TVOD Raw Score"
+          metrics:
+            total_tvod_raw_score:
+              type: sum
+              label: "Total TVOD Demand Score"
+              compact: "thousands"
+              groups:
+                - "Demand Signals"
+
+      - name: avod_roi_score
+        description: "AVOD raw score divided by cost_multiplier."
+        meta:
+          dimension:
+            type: number
+            label: "AVOD ROI Score"
+          metrics:
+            avg_avod_roi_score:
+              type: average
+              label: "Avg AVOD ROI Score"
+              round: 2
+              groups:
+                - "Revenue Estimates"
+
+      - name: tvod_roi_score
+        description: "TVOD raw score divided by cost_multiplier."
+        meta:
+          dimension:
+            type: number
+            label: "TVOD ROI Score"
+          metrics:
+            avg_tvod_roi_score:
+              type: average
+              label: "Avg TVOD ROI Score"
+              round: 2
+              groups:
+                - "Revenue Estimates"
+
+      - name: avod_revenue_usd
+        description: "Estimated AVOD ad revenue from clickout-to-view conversion × eCPM."
+        meta:
+          dimension:
+            type: number
+            label: "Est. AVOD Revenue (USD)"
+          metrics:
+            total_avod_revenue:
+              type: sum
+              label: "Total Est. AVOD Revenue"
+              format: "usd"
+              compact: "thousands"
+              round: 0
+              groups:
+                - "Revenue Estimates"
+            avg_avod_revenue:
+              type: average
+              label: "Avg AVOD Revenue per Title"
+              format: "usd"
+              round: 2
+              groups:
+                - "Revenue Estimates"
+
+      - name: tvod_revenue_usd
+        description: "Estimated TVOD transaction margin (rent + buy)."
+        meta:
+          dimension:
+            type: number
+            label: "Est. TVOD Revenue (USD)"
+          metrics:
+            total_tvod_revenue:
+              type: sum
+              label: "Total Est. TVOD Revenue"
+              format: "usd"
+              compact: "thousands"
+              round: 0
+              groups:
+                - "Revenue Estimates"
+            avg_tvod_revenue:
+              type: average
+              label: "Avg TVOD Revenue per Title"
+              format: "usd"
+              round: 2
+              groups:
+                - "Revenue Estimates"
+
+      - name: total_revenue_usd
+        description: "Combined AVOD + TVOD estimated revenue."
+        meta:
+          dimension:
+            type: number
+            label: "Est. Total Revenue (USD)"
+          metrics:
+            total_revenue:
+              type: sum
+              label: "Total Est. Revenue (all titles)"
+              format: "usd"
+              compact: "thousands"
+              round: 0
+              groups:
+                - "Revenue Estimates"
+            avg_total_revenue:
+              type: average
+              label: "Avg Revenue per Title"
+              format: "usd"
+              round: 2
+              groups:
+                - "Revenue Estimates"
+            max_revenue_title:
+              type: max
+              label: "Top Title Revenue"
+              format: "usd"
+              round: 2
+              groups:
+                - "Revenue Estimates"
+
+      - name: roi_usd
+        description: "total_revenue_usd / cost_multiplier. Higher = better acquisition ROI in dollar terms."
+        meta:
+          dimension:
+            type: number
+            label: "ROI (USD)"
+          metrics:
+            avg_roi:
+              type: average
+              label: "Avg ROI"
+              format: "usd"
+              round: 2
+              groups:
+                - "Revenue Estimates"
+            max_roi:
+              type: max
+              label: "Best Title ROI"
+              format: "usd"
+              round: 2
+              groups:
+                - "Revenue Estimates"
+            median_roi:
+              type: median
+              label: "Median ROI"
+              format: "usd"
+              round: 2
+              groups:
+                - "Revenue Estimates"
+
+      - name: avod_pct
+        description: "Share of clickouts to free/ads providers (0–100)."
+        meta:
+          dimension:
+            type: number
+            label: "AVOD Clickout Share %"
+          metrics:
+            avg_avod_pct:
+              type: average
+              label: "Avg AVOD Clickout Share %"
+              round: 1
+              groups:
+                - "Monetization Profile"
+
+      - name: tvod_pct
+        description: "Share of clickouts to rent/buy/cinema (0–100)."
+        meta:
+          dimension:
+            type: number
+            label: "TVOD Clickout Share %"
+          metrics:
+            avg_tvod_pct:
+              type: average
+              label: "Avg TVOD Clickout Share %"
+              round: 1
+              groups:
+                - "Monetization Profile"
+
+      - name: svod_pct
+        description: "Share of clickouts to flatrate/sports subscription services (0–100)."
+        meta:
+          dimension:
+            type: number
+            label: "SVOD Clickout Share %"
+          metrics:
+            avg_svod_pct:
+              type: average
+              label: "Avg SVOD Clickout Share %"
+              round: 1
+              groups:
+                - "Monetization Profile"
+
+      - name: overall_roi_rank
+        description: "Rank by roi_usd descending. Rank 1 = best ROI title."
+        meta:
+          dimension:
+            type: number
+            label: "Overall ROI Rank"
+
+      - name: avod_roi_rank
+        description: "Rank within AVOD-dominant titles by AVOD ROI descending."
+        meta:
+          dimension:
+            type: number
+            label: "AVOD ROI Rank"
+
+      - name: tvod_roi_rank
+        description: "Rank within TVOD-dominant titles by TVOD ROI descending."
+        meta:
+          dimension:
+            type: number
+            label: "TVOD ROI Rank"
+
+      - name: total_user_engagements
+        description: "Sum of daily unique user counts across all days (user-day count, not true uniques)."
+        meta:
+          dimension:
+            type: number
+            label: "Total User Engagements"
+          metrics:
+            sum_user_engagements:
+              type: sum
+              label: "Total User Engagements"
+              compact: "thousands"
+              groups:
+                - "Demand Signals"
+
+      - name: active_days
+        description: "Number of distinct days with any demand signal for this title."
+        meta:
+          dimension:
+            type: number
+            label: "Active Days"
+          metrics:
+            avg_active_days:
+              type: average
+              label: "Avg Active Days per Title"
+              round: 1
+              groups:
+                - "Demand Signals"
 
   # ── fct_title_acquisition_priority ───────────────────────────────────────────
   - name: fct_title_acquisition_priority
@@ -337,7 +2010,7 @@ models:
       and why?"*
 
       **Sources joined:**
-      - `fct_title_licensing_score` — ROI scores, cost tier, supply flags
+      - `fct_title_revenue_estimate` — ROI scores, revenue estimates, cost tier, supply flags
       - `fct_segment_title_demand` (filtered by segment) — who wants each title
       - Scarcity index computed inline: `1 / (1 + total_provider_count)`
 
@@ -368,40 +2041,637 @@ models:
       - `is_tvod_to_avod_candidate` → "TVOD-to-AVOD Pipeline" slide
       - `is_churn_prevention_title` → "Churn Prevention Acquisition" slide
       - `is_cross_market_opportunity` → "Cross-Market Arbitrage" slide
+    meta:
+      metrics:
+        total_pipeline_revenue_usd:
+          type: number
+          sql: "SUM(${TABLE}.total_revenue_usd)"
+          label: "Total Estimated Pipeline Revenue"
+          description: "Sum of estimated AVOD + TVOD revenue across all titles."
+          format: "usd"
+          compact: "millions"
+          round: 0
+          groups:
+            - "Revenue Estimates"
+        avg_roi_usd:
+          type: number
+          sql: "AVG(${TABLE}.roi_usd)"
+          label: "Avg ROI per Title"
+          format: "usd"
+          round: 2
+          groups:
+            - "Revenue Estimates"
+        avod_gap_opportunity_count:
+          type: number
+          sql: "COUNT(CASE WHEN ${TABLE}.is_avod_gap_opportunity THEN 1 END)"
+          label: "AVOD Gap Opportunities"
+          description: "Count of titles that are AVOD underserved AND driven by Bingers."
+          groups:
+            - "Strategic Flags"
+        churn_prevention_count:
+          type: number
+          sql: "COUNT(CASE WHEN ${TABLE}.is_churn_prevention_title THEN 1 END)"
+          label: "Churn Prevention Titles"
+          groups:
+            - "Strategic Flags"
+        cross_market_count:
+          type: number
+          sql: "COUNT(CASE WHEN ${TABLE}.is_cross_market_opportunity THEN 1 END)"
+          label: "Cross-Market Opportunity Titles"
+          groups:
+            - "Strategic Flags"
+        tvod_to_avod_count:
+          type: number
+          sql: "COUNT(CASE WHEN ${TABLE}.is_tvod_to_avod_candidate THEN 1 END)"
+          label: "TVOD-to-AVOD Pipeline Titles"
+          groups:
+            - "Strategic Flags"
     columns:
       - name: title_entity_id
         description: "Primary key. Join to `base_objects.object_id` for additional metadata not carried in this model."
+        meta:
+          dimension:
+            type: string
+            label: "Title ID"
+          metrics:
+            total_titles:
+              type: count_distinct
+              label: "Total Titles in Pipeline"
+              groups:
+                - "Volume"
+
+      - name: title
+        description: "Title name from base_objects."
+        meta:
+          dimension:
+            type: string
+            label: "Title"
+
+      - name: object_type
+        description: "Content type: 'movie' or 'show'."
+        meta:
+          dimension:
+            type: string
+            label: "Content Type"
+
+      - name: release_year
+        description: "Year of original release."
+        meta:
+          dimension:
+            type: number
+            label: "Release Year"
+
+      - name: original_language
+        description: "Original production language (ISO 639-1 code)."
+        meta:
+          dimension:
+            type: string
+            label: "Original Language"
+
+      - name: imdb_score
+        description: "IMDB rating score (0–10)."
+        meta:
+          dimension:
+            type: number
+            label: "IMDB Score"
+          metrics:
+            avg_imdb_score_pipeline:
+              type: average
+              label: "Avg IMDB Score"
+              round: 2
+              groups:
+                - "Content Quality"
+
+      - name: cost_tier
+        description: "Estimated licensing cost category: `'premium'`, `'mid_tier'`, `'catalog'`, `'low_cost'`."
+        meta:
+          dimension:
+            type: string
+            label: "Cost Tier"
+
+      - name: acquisition_tier
+        description: "Acquisition ROI tier: `'top_10pct'`, `'top_25pct'`, `'mid'`, `'tail'`."
+        meta:
+          dimension:
+            type: string
+            label: "Acquisition Tier"
+
+      - name: dominant_monetization
+        description: "Dominant monetization model based on clickout mix: `'avod'`, `'tvod'`, `'svod'`, `'mixed'`, `'unknown'`."
+        meta:
+          dimension:
+            type: string
+            label: "Dominant Monetization"
+
+      - name: monetization_signal
+        description: "Human-readable licensing recommendation: `'LICENSE FOR AVOD'`, `'LICENSE FOR TVOD'`, `'SKIP - ON SVOD'`, `'MIXED DEMAND'`, `'NO CLICKOUT DATA'`."
+        meta:
+          dimension:
+            type: string
+            label: "Monetization Signal"
+
+      - name: licensing_recommendation
+        description: "Rule-based recommendation: `'avod_priority'`, `'tvod_priority'`, `'low_priority'`."
+        meta:
+          dimension:
+            type: string
+            label: "Licensing Recommendation"
+
+      - name: market_count
+        description: "Count of distinct markets with demand for this title."
+        meta:
+          dimension:
+            type: number
+            label: "Market Count"
+          metrics:
+            avg_market_count_pipeline:
+              type: average
+              label: "Avg Market Count"
+              round: 1
+              groups:
+                - "Market Insights"
+
+      - name: has_avod_supply
+        description: "True if at least one free/ads clickout was observed."
+        meta:
+          dimension:
+            type: boolean
+            label: "Has AVOD Supply"
+
+      - name: has_tvod_supply
+        description: "True if at least one rent/buy/cinema clickout was observed."
+        meta:
+          dimension:
+            type: boolean
+            label: "Has TVOD Supply"
+
+      - name: has_svod_supply
+        description: "True if at least one flatrate/sports clickout was observed."
+        meta:
+          dimension:
+            type: boolean
+            label: "Has SVOD Supply"
+
+      - name: is_avod_underserved
+        description: "True: AVOD demand exists but no free/ads supply observed."
+        meta:
+          dimension:
+            type: boolean
+            label: "AVOD Underserved"
+
+      - name: is_tvod_underserved
+        description: "True: TVOD demand exists but no rent/buy supply observed."
+        meta:
+          dimension:
+            type: boolean
+            label: "TVOD Underserved"
+
       - name: acquisition_rank
         description: "Primary sort column for the dashboard Shopping List. Rank 1 = highest composite acquisition score. Computed by `ROW_NUMBER() OVER (ORDER BY composite_acquisition_score DESC)`."
+        meta:
+          dimension:
+            type: number
+            label: "Acquisition Rank"
+
       - name: composite_acquisition_score
         description: |
           Blended score combining ROI and strategic bonuses. See model description for
           the full formula. **The bonuses are intentionally transparent** — each bonus
           component is also available as an individual flag (`is_avod_gap_opportunity`,
           etc.) so stakeholders can explain any title's score component by component.
+        meta:
+          dimension:
+            type: number
+            label: "Composite Acquisition Score"
+          metrics:
+            avg_composite_score:
+              type: average
+              label: "Avg Composite Score"
+              round: 2
+              groups:
+                - "Acquisition Priority"
+            max_composite_score:
+              type: max
+              label: "Top Composite Score"
+              round: 2
+              groups:
+                - "Acquisition Priority"
+            sum_composite_score:
+              type: sum
+              label: "Total Pipeline Score"
+              compact: "millions"
+              groups:
+                - "Acquisition Priority"
+
+      - name: avod_revenue_usd
+        description: "Estimated AVOD ad revenue: `avod_clickouts × clickout_to_view_conversion × view_hours × ecpm / 1000`."
+        meta:
+          dimension:
+            type: number
+            label: "Est. AVOD Revenue (USD)"
+          metrics:
+            total_avod_revenue:
+              type: sum
+              label: "Total Est. AVOD Revenue"
+              format: "usd"
+              compact: "thousands"
+              round: 0
+              groups:
+                - "Revenue Estimates"
+            avg_avod_revenue_per_title:
+              type: average
+              label: "Avg AVOD Revenue per Title"
+              format: "usd"
+              round: 2
+              groups:
+                - "Revenue Estimates"
+
+      - name: tvod_revenue_usd
+        description: "Estimated TVOD transaction margin: `rent_clickouts × margin_per_rent + buy_clickouts × margin_per_buy`."
+        meta:
+          dimension:
+            type: number
+            label: "Est. TVOD Revenue (USD)"
+          metrics:
+            total_tvod_revenue:
+              type: sum
+              label: "Total Est. TVOD Revenue"
+              format: "usd"
+              compact: "thousands"
+              round: 0
+              groups:
+                - "Revenue Estimates"
+            avg_tvod_revenue_per_title:
+              type: average
+              label: "Avg TVOD Revenue per Title"
+              format: "usd"
+              round: 2
+              groups:
+                - "Revenue Estimates"
+
+      - name: total_revenue_usd
+        description: "Combined AVOD + TVOD estimated revenue."
+        meta:
+          dimension:
+            type: number
+            label: "Est. Total Revenue (USD)"
+          metrics:
+            total_pipeline_revenue:
+              type: sum
+              label: "Total Pipeline Revenue (USD)"
+              format: "usd"
+              compact: "thousands"
+              round: 0
+              groups:
+                - "Revenue Estimates"
+            avg_revenue_per_title:
+              type: average
+              label: "Avg Revenue per Title (USD)"
+              format: "usd"
+              round: 2
+              groups:
+                - "Revenue Estimates"
+
+      - name: roi_usd
+        description: "Revenue / cost multiplier index. Higher = better acquisition ROI in dollar terms."
+        meta:
+          dimension:
+            type: number
+            label: "ROI (USD)"
+          metrics:
+            avg_roi_per_title:
+              type: average
+              label: "Avg ROI per Title"
+              format: "usd"
+              round: 2
+              groups:
+                - "Revenue Estimates"
+            max_roi_title:
+              type: max
+              label: "Best Title ROI"
+              format: "usd"
+              round: 2
+              groups:
+                - "Revenue Estimates"
+
+      - name: avod_raw_score
+        description: "Absolute weighted AVOD engagement score."
+        meta:
+          dimension:
+            type: number
+            label: "AVOD Raw Score"
+          metrics:
+            total_avod_demand:
+              type: sum
+              label: "Total AVOD Demand Score"
+              compact: "millions"
+              groups:
+                - "AVOD Demand"
+
+      - name: tvod_raw_score
+        description: "Absolute weighted TVOD transactional intent score."
+        meta:
+          dimension:
+            type: number
+            label: "TVOD Raw Score"
+          metrics:
+            total_tvod_demand:
+              type: sum
+              label: "Total TVOD Demand Score"
+              compact: "thousands"
+              groups:
+                - "TVOD Demand"
+
+      - name: avod_roi_score
+        description: "AVOD raw score divided by cost_multiplier."
+        meta:
+          dimension:
+            type: number
+            label: "AVOD ROI Score"
+          metrics:
+            avg_avod_roi:
+              type: average
+              label: "Avg AVOD ROI Score"
+              round: 2
+              groups:
+                - "Acquisition Priority"
+
+      - name: tvod_roi_score
+        description: "TVOD raw score divided by cost_multiplier."
+        meta:
+          dimension:
+            type: number
+            label: "TVOD ROI Score"
+          metrics:
+            avg_tvod_roi:
+              type: average
+              label: "Avg TVOD ROI Score"
+              round: 2
+              groups:
+                - "Acquisition Priority"
+
       - name: scarcity_index
         description: |
           `1.0 / (1.0 + total_provider_count)`. Range: approaching 1 (title on no platforms)
           to approaching 0 (title on many platforms). Titles with high scarcity and high
           demand are the lowest-cost acquisition opportunities: the market has not yet
           recognised their value.
+        meta:
+          dimension:
+            type: number
+            label: "Scarcity Index (0–1)"
+          metrics:
+            avg_scarcity_index:
+              type: average
+              label: "Avg Scarcity Index"
+              round: 2
+              description: "Average scarcity — higher means more titles have no current supply."
+              groups:
+                - "Supply Coverage"
+
       - name: binger_avod_demand
         description: "AVOD demand score from the Binger segment only, sourced from `fct_segment_title_demand`. High binger demand with no free supply is the AVOD gap opportunity signal."
+        meta:
+          dimension:
+            type: number
+            label: "Binger AVOD Demand"
+          metrics:
+            total_binger_avod_demand:
+              type: sum
+              label: "Total Binger AVOD Demand"
+              compact: "thousands"
+              groups:
+                - "Segment Demand"
+            avg_binger_avod_demand:
+              type: average
+              label: "Avg Binger AVOD Demand"
+              round: 1
+              groups:
+                - "Segment Demand"
+
       - name: whale_tvod_demand
         description: "TVOD demand from the Whale segment. Whales actively pay to watch — their demand is the most reliable predictor of TVOD revenue potential."
+        meta:
+          dimension:
+            type: number
+            label: "Whale TVOD Demand"
+          metrics:
+            total_whale_tvod_demand:
+              type: sum
+              label: "Total Whale TVOD Demand"
+              compact: "thousands"
+              groups:
+                - "Segment Demand"
+            avg_whale_tvod_demand:
+              type: average
+              label: "Avg Whale TVOD Demand"
+              round: 1
+              groups:
+                - "Segment Demand"
+
       - name: churn_risk_demand
         description: "Combined AVOD + TVOD demand from the churn-risk segment. When > 0, the title is flagged `is_churn_prevention_title = true` and earns a +15 score bonus. Licensing this title may retain at-risk high-value users."
+        meta:
+          dimension:
+            type: number
+            label: "Churn Risk Demand"
+          metrics:
+            total_churn_risk_demand:
+              type: sum
+              label: "Total Churn Risk Demand"
+              compact: "thousands"
+              groups:
+                - "Churn Prevention"
+            avg_churn_risk_demand:
+              type: average
+              label: "Avg Churn Risk Demand"
+              round: 1
+              groups:
+                - "Churn Prevention"
+
       - name: is_avod_gap_opportunity
         description: "`is_avod_underserved AND binger_avod_demand > 0`. Both conditions must be true: the title is underserved globally AND the Binger segment (the target AVOD audience) is specifically interested."
+        meta:
+          dimension:
+            type: boolean
+            label: "AVOD Gap Opportunity"
+          metrics:
+            count_avod_gap_opportunities:
+              type: count
+              label: "AVOD Gap Opportunity Titles"
+              filters:
+                - is_avod_gap_opportunity: "true"
+              groups:
+                - "Strategic Flags"
+
       - name: is_tvod_to_avod_candidate
         description: "`tvod_raw_score > 0 AND NOT has_avod_supply`. Users are willing to pay to watch it but no free option exists. Acquiring AVOD rights would be a market-disrupting move."
+        meta:
+          dimension:
+            type: boolean
+            label: "TVOD-to-AVOD Candidate"
+          metrics:
+            count_tvod_to_avod:
+              type: count
+              label: "TVOD-to-AVOD Candidate Titles"
+              filters:
+                - is_tvod_to_avod_candidate: "true"
+              groups:
+                - "Strategic Flags"
+
       - name: is_churn_prevention_title
         description: "`churn_risk_demand > 0`. At-risk users have shown specific interest in this title. Licensing it as a retention intervention may be cheaper than acquiring a new user to replace a churner."
+        meta:
+          dimension:
+            type: boolean
+            label: "Churn Prevention Title"
+          metrics:
+            count_churn_prevention:
+              type: count
+              label: "Churn Prevention Titles"
+              filters:
+                - is_churn_prevention_title: "true"
+              groups:
+                - "Churn Prevention"
+
       - name: is_cross_market_opportunity
         description: "`market_count >= 3`. Demanded in three or more distinct markets. Titles with broad geographic demand offer better licensing ROI because the same licence can serve multiple markets."
+        meta:
+          dimension:
+            type: boolean
+            label: "Cross-Market Opportunity"
+          metrics:
+            count_cross_market:
+              type: count
+              label: "Cross-Market Titles"
+              filters:
+                - is_cross_market_opportunity: "true"
+              groups:
+                - "Strategic Flags"
+
       - name: is_binger_driven
         description: "`binger_avod_demand > avod_raw_score × 0.3`. More than 30 % of this title's AVOD demand comes from the Binger segment. Confirms the title is a good AVOD catalogue fit, not just a general popularity spike."
+        meta:
+          dimension:
+            type: boolean
+            label: "Binger-Driven"
+          metrics:
+            count_binger_driven:
+              type: count
+              label: "Binger-Driven Titles"
+              filters:
+                - is_binger_driven: "true"
+              groups:
+                - "Strategic Flags"
+
       - name: churn_prevention_rank
         description: "Rank within `is_churn_prevention_title = true` titles, ordered by `churn_risk_demand DESC`. Use to prioritise the most impactful retention-driven acquisitions."
+        meta:
+          dimension:
+            type: number
+            label: "Churn Prevention Rank"
+
       - name: tvod_to_avod_rank
         description: "Rank within `is_tvod_to_avod_candidate = true` titles, ordered by `tvod_raw_score DESC`. The highest-ranked titles are those where users most strongly demonstrate willingness to pay, making free-rights acquisition the biggest value play."
+        meta:
+          dimension:
+            type: number
+            label: "TVOD-to-AVOD Rank"
+
+      - name: binger_user_count
+        description: "Count of distinct Binger segment users who engaged with this title."
+        meta:
+          dimension:
+            type: number
+            label: "Binger Users"
+          metrics:
+            total_binger_users:
+              type: sum
+              label: "Total Binger Users Across Pipeline"
+              compact: "thousands"
+              groups:
+                - "Segment Demand"
+
+      - name: whale_user_count
+        description: "Count of distinct Whale segment users who engaged with this title."
+        meta:
+          dimension:
+            type: number
+            label: "Whale Users"
+          metrics:
+            total_whale_users:
+              type: sum
+              label: "Total Whale Users Across Pipeline"
+              compact: "thousands"
+              groups:
+                - "Segment Demand"
+
+      - name: churn_risk_user_count
+        description: "Count of distinct churn-risk users who engaged with this title."
+        meta:
+          dimension:
+            type: number
+            label: "Churn Risk Users"
+          metrics:
+            total_churn_risk_users:
+              type: sum
+              label: "Total Churn Risk Users Across Pipeline"
+              compact: "thousands"
+              groups:
+                - "Churn Prevention"
+
+      - name: avod_pct
+        description: "Share of this title's clickouts that went to free/ads providers (0–100)."
+        meta:
+          dimension:
+            type: number
+            label: "AVOD Clickout Share %"
+          metrics:
+            avg_avod_pct:
+              type: average
+              label: "Avg AVOD Clickout Share %"
+              round: 1
+              groups:
+                - "Monetization Profile"
+
+      - name: tvod_pct
+        description: "Share of this title's clickouts that went to rent/buy/cinema (0–100)."
+        meta:
+          dimension:
+            type: number
+            label: "TVOD Clickout Share %"
+          metrics:
+            avg_tvod_pct:
+              type: average
+              label: "Avg TVOD Clickout Share %"
+              round: 1
+              groups:
+                - "Monetization Profile"
+
+      - name: svod_pct
+        description: "Share of this title's clickouts that went to flatrate/sports subscription services (0–100)."
+        meta:
+          dimension:
+            type: number
+            label: "SVOD Clickout Share %"
+          metrics:
+            avg_svod_pct:
+              type: average
+              label: "Avg SVOD Clickout Share %"
+              round: 1
+              groups:
+                - "Monetization Profile"
+
+      - name: is_tvod_only
+        description: "True if title has only TVOD demand (no AVOD or SVOD clickouts observed)."
+        meta:
+          dimension:
+            type: boolean
+            label: "TVOD Only"
+
+      - name: is_svod_exclusive
+        description: "True if title has only SVOD clickouts — currently on subscription only."
+        meta:
+          dimension:
+            type: boolean
+            label: "SVOD Exclusive"

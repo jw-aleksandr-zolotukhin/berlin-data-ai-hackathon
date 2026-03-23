@@ -1,0 +1,36 @@
+contentType: chart
+name: "Top 20 Titles by AVOD ROI Score"
+slug: bar-top-avod-roi
+spaceSlug: streamcap
+tableName: fct_title_acquisition_priority
+version: 1
+chartConfig:
+  type: cartesian
+  config:
+    eChartsConfig:
+      series:
+        - type: bar
+          encode:
+            xRef:
+              field: fct_title_acquisition_priority_avod_roi_score
+            yRef:
+              field: fct_title_acquisition_priority_title
+    layout:
+      flipAxes: true
+      xField: fct_title_acquisition_priority_title
+      yField:
+        - fct_title_acquisition_priority_avod_roi_score
+metricQuery:
+  exploreName: fct_title_acquisition_priority
+  tableCalculations: []
+  dimensions:
+    - fct_title_acquisition_priority_title
+    - fct_title_acquisition_priority_avod_roi_score
+  filters: {}
+  limit: 20
+  metrics: []
+  sorts:
+    - fieldId: fct_title_acquisition_priority_avod_roi_score
+      descending: true
+tableConfig:
+  columnOrder: []

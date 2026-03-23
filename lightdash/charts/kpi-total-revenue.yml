@@ -1,0 +1,24 @@
+contentType: chart
+name: "KPI: Total Estimated Pipeline Revenue"
+slug: kpi-total-revenue
+spaceSlug: streamcap
+tableName: fct_title_acquisition_priority
+version: 1
+chartConfig:
+  type: big_number
+  config:
+    label: "Est. Pipeline Revenue"
+    selectedField: fct_title_acquisition_priority_total_pipeline_revenue
+    showBigNumberLabel: true
+    style: "K"
+metricQuery:
+  exploreName: fct_title_acquisition_priority
+  tableCalculations: []
+  dimensions: []
+  filters: {}
+  limit: 1
+  metrics:
+    - fct_title_acquisition_priority_total_pipeline_revenue
+  sorts: []
+tableConfig:
+  columnOrder: []

@@ -1,0 +1,64 @@
+contentType: chart
+name: "Market Entry Scorecard"
+slug: table-market-scorecard
+spaceSlug: streamcap
+tableName: fct_market_demand_gap
+version: 1
+chartConfig:
+  type: table
+  config:
+    showTableNames: false
+    hideRowNumbers: false
+    columns:
+      fct_market_demand_gap_app_locale:
+        name: "Market"
+        frozen: true
+        visible: true
+      fct_market_demand_gap_max_market_avod_demand:
+        name: "AVOD Demand"
+        visible: true
+        displayStyle: bar
+        color: "#36A2EB"
+      fct_market_demand_gap_max_avod_gap_titles:
+        name: "Gap Titles"
+        visible: true
+      fct_market_demand_gap_avg_avod_gap_ratio:
+        name: "Gap Ratio"
+        visible: true
+      fct_market_demand_gap_max_opportunity_score:
+        name: "Opportunity Score"
+        visible: true
+        displayStyle: bar
+        color: "#7262FF"
+      fct_market_demand_gap_avg_supply_coverage:
+        name: "Supply Coverage"
+        visible: true
+      fct_market_demand_gap_avg_users_per_market:
+        name: "Avg Users"
+        visible: true
+metricQuery:
+  exploreName: fct_market_demand_gap
+  tableCalculations: []
+  dimensions:
+    - fct_market_demand_gap_app_locale
+  filters: {}
+  limit: 20
+  metrics:
+    - fct_market_demand_gap_max_market_avod_demand
+    - fct_market_demand_gap_max_avod_gap_titles
+    - fct_market_demand_gap_avg_avod_gap_ratio
+    - fct_market_demand_gap_max_opportunity_score
+    - fct_market_demand_gap_avg_supply_coverage
+    - fct_market_demand_gap_avg_users_per_market
+  sorts:
+    - fieldId: fct_market_demand_gap_max_opportunity_score
+      descending: true
+tableConfig:
+  columnOrder:
+    - fct_market_demand_gap_app_locale
+    - fct_market_demand_gap_max_market_avod_demand
+    - fct_market_demand_gap_max_avod_gap_titles
+    - fct_market_demand_gap_avg_avod_gap_ratio
+    - fct_market_demand_gap_max_opportunity_score
+    - fct_market_demand_gap_avg_supply_coverage
+    - fct_market_demand_gap_avg_users_per_market

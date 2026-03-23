@@ -1,0 +1,9 @@
+monetization_type,benchmark_name,value,source,notes
+avod,ecpm_usd,8.0,industry_avg,EU streaming AVOD eCPM range $5-15 mid estimate per Pluto TV and Tubi investor disclosures
+avod,estimated_view_hours_per_clickout,1.5,assumption,Average session length proxy: user clicked to free offer and watched ~1.5 hrs
+avod,clickout_to_view_conversion,0.6,assumption,60% of AVOD clickouts result in actual viewing session
+tvod,margin_per_rent_usd,1.50,industry_avg,After ~40% platform fee on typical $3.99 EUR rent price
+tvod,margin_per_buy_usd,4.00,industry_avg,After ~40% platform fee on typical $9.99 EUR buy price
+tvod,rent_to_buy_ratio,0.8,industry_avg,80% of TVOD transactions are rentals vs purchases
+svod,monthly_arpu_usd,9.0,competitor_avg,Netflix DE ~13 EUR Amazon ~9 EUR mid estimate
+svod,titles_per_subscriber_month,4.0,assumption,Average subscriber watches ~4 distinct titles per month

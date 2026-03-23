@@ -1,0 +1,51 @@
+contentType: chart
+name: "Genre Demand Intensity (per Title)"
+slug: bar-genre-demand-intensity
+spaceSlug: streamcap
+tableName: fct_genre_demand_profile
+version: 1
+chartConfig:
+  type: cartesian
+  config:
+    eChartsConfig:
+      legend:
+        show: true
+      series:
+        - type: bar
+          encode:
+            xRef:
+              field: fct_genre_demand_profile_genre
+            yRef:
+              field: fct_genre_demand_profile_avg_avod_intensity
+          name: "AVOD / Title"
+          color: "#36A2EB"
+          stack: demand
+        - type: bar
+          encode:
+            xRef:
+              field: fct_genre_demand_profile_genre
+            yRef:
+              field: fct_genre_demand_profile_avg_tvod_intensity
+          name: "TVOD / Title"
+          color: "#FF6384"
+          stack: demand
+    layout:
+      xField: fct_genre_demand_profile_genre
+      yField:
+        - fct_genre_demand_profile_avg_avod_intensity
+        - fct_genre_demand_profile_avg_tvod_intensity
+metricQuery:
+  exploreName: fct_genre_demand_profile
+  tableCalculations: []
+  dimensions:
+    - fct_genre_demand_profile_genre
+  filters: {}
+  limit: 20
+  metrics:
+    - fct_genre_demand_profile_avg_avod_intensity
+    - fct_genre_demand_profile_avg_tvod_intensity
+  sorts:
+    - fieldId: fct_genre_demand_profile_avg_avod_intensity
+      descending: true
+tableConfig:
+  columnOrder: []

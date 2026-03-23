@@ -1,21 +1,23 @@
 -- Grain: one row per top-level title
 -- The StreamCap "Shopping List" — final ranked content acquisition output.
--- Combines licensing ROI scores with customer segment demand signals to answer:
+-- Combines licensing ROI scores, dollar revenue estimates, monetization profile,
+-- and customer segment demand signals to answer:
 --   Which titles should JustWatch license, for which audience, and why?
 --
 -- acquisition_rank is the primary sort column for the dashboard.
--- composite_acquisition_score = ROI base + strategic bonuses (all tunable).
+-- composite_acquisition_score uses multiplicative bonuses so strategic flags
+-- scale proportionally with the title's baseline ROI (not as flat additions).
 --
--- Strategic bonus structure:
---   +25  cross_market: demanded in 3+ markets (better licensing ROI)
---   +20  avod_underserved: high AVOD demand, no free/ads supply exists
---   +15  tvod_to_avod: users pay to rent/buy but no free option exists → disrupt
---   +15  churn_prevention: at-risk users are specifically requesting this title
---   +10  binger_driven: AVOD demand is primarily from high-volume Binger segment
+-- Strategic multiplier structure (applied to roi_usd from fct_title_revenue_estimate):
+--   ×1.25  cross_market: demanded in 3+ markets — one deal covers more territory
+--   ×1.20  avod_underserved: high engagement, nobody offers it free → exclusivity
+--   ×1.15  tvod_to_avod: users already pay to watch → proven demand for the title
+--   ×1.15  churn_prevention: at-risk users specifically request this title
+--   ×1.10  binger_driven: power users drive AVOD demand → high watch-time potential
 {{ config(materialized='table') }}
 
 with licensing as (
-    select * from {{ ref('fct_title_licensing_score') }}
+    select * from {{ ref('fct_title_revenue_estimate') }}
 ),
 
 -- Pull segment demand for each title

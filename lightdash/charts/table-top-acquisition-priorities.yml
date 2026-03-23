@@ -1,0 +1,73 @@
+contentType: chart
+name: "Top 25 Acquisition Priorities"
+slug: table-top-acquisition-priorities
+spaceSlug: streamcap
+tableName: fct_title_acquisition_priority
+version: 1
+chartConfig:
+  type: table
+  config:
+    showTableNames: false
+    hideRowNumbers: false
+    columns:
+      fct_title_acquisition_priority_acquisition_rank:
+        name: "Rank"
+        frozen: true
+        visible: true
+      fct_title_acquisition_priority_title:
+        name: "Title"
+        frozen: true
+        visible: true
+      fct_title_acquisition_priority_object_type:
+        name: "Type"
+        visible: true
+      fct_title_acquisition_priority_cost_tier:
+        name: "Cost Tier"
+        visible: true
+      fct_title_acquisition_priority_licensing_recommendation:
+        name: "Recommendation"
+        visible: true
+      fct_title_acquisition_priority_composite_acquisition_score:
+        name: "Score"
+        visible: true
+        displayStyle: bar
+        color: "#7262FF"
+      fct_title_acquisition_priority_total_avod_revenue:
+        name: "Est. AVOD Revenue"
+        visible: true
+      fct_title_acquisition_priority_total_tvod_revenue:
+        name: "Est. TVOD Revenue"
+        visible: true
+      fct_title_acquisition_priority_avg_market_count_pipeline:
+        name: "Markets"
+        visible: true
+metricQuery:
+  exploreName: fct_title_acquisition_priority
+  tableCalculations: []
+  dimensions:
+    - fct_title_acquisition_priority_acquisition_rank
+    - fct_title_acquisition_priority_title
+    - fct_title_acquisition_priority_object_type
+    - fct_title_acquisition_priority_cost_tier
+    - fct_title_acquisition_priority_licensing_recommendation
+    - fct_title_acquisition_priority_composite_acquisition_score
+  filters: {}
+  limit: 25
+  metrics:
+    - fct_title_acquisition_priority_total_avod_revenue
+    - fct_title_acquisition_priority_total_tvod_revenue
+    - fct_title_acquisition_priority_avg_market_count_pipeline
+  sorts:
+    - fieldId: fct_title_acquisition_priority_composite_acquisition_score
+      descending: true
+tableConfig:
+  columnOrder:
+    - fct_title_acquisition_priority_acquisition_rank
+    - fct_title_acquisition_priority_title
+    - fct_title_acquisition_priority_object_type
+    - fct_title_acquisition_priority_cost_tier
+    - fct_title_acquisition_priority_licensing_recommendation
+    - fct_title_acquisition_priority_composite_acquisition_score
+    - fct_title_acquisition_priority_total_avod_revenue
+    - fct_title_acquisition_priority_total_tvod_revenue
+    - fct_title_acquisition_priority_avg_market_count_pipeline

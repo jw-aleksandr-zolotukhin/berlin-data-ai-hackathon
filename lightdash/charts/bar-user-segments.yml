@@ -1,0 +1,36 @@
+contentType: chart
+name: "User Segment Distribution"
+slug: bar-user-segments
+spaceSlug: streamcap
+tableName: fct_user_segments
+version: 1
+chartConfig:
+  type: cartesian
+  config:
+    eChartsConfig:
+      series:
+        - type: bar
+          encode:
+            xRef:
+              field: fct_user_segments_user_segment
+            yRef:
+              field: fct_user_segments_total_users
+          color: "#7262FF"
+    layout:
+      xField: fct_user_segments_user_segment
+      yField:
+        - fct_user_segments_total_users
+metricQuery:
+  exploreName: fct_user_segments
+  tableCalculations: []
+  dimensions:
+    - fct_user_segments_user_segment
+  filters: {}
+  limit: 10
+  metrics:
+    - fct_user_segments_total_users
+  sorts:
+    - fieldId: fct_user_segments_total_users
+      descending: true
+tableConfig:
+  columnOrder: []

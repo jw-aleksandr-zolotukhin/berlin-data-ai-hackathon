@@ -1,0 +1,57 @@
+contentType: chart
+name: "Churn Prevention Acquisition Targets"
+slug: table-churn-prevention
+spaceSlug: streamcap
+tableName: fct_title_acquisition_priority
+version: 1
+chartConfig:
+  type: table
+  config:
+    showTableNames: false
+    hideRowNumbers: false
+    columns:
+      fct_title_acquisition_priority_title:
+        name: "Title"
+        frozen: true
+        visible: true
+      fct_title_acquisition_priority_object_type:
+        name: "Type"
+        visible: true
+      fct_title_acquisition_priority_total_churn_risk_demand:
+        name: "Churn Risk Demand"
+        visible: true
+        displayStyle: bar
+        color: "#FF9F40"
+      fct_title_acquisition_priority_total_churn_risk_users:
+        name: "At-Risk Users"
+        visible: true
+      fct_title_acquisition_priority_licensing_recommendation:
+        name: "Recommendation"
+        visible: true
+      fct_title_acquisition_priority_avg_composite_score:
+        name: "Acquisition Score"
+        visible: true
+metricQuery:
+  exploreName: fct_title_acquisition_priority
+  tableCalculations: []
+  dimensions:
+    - fct_title_acquisition_priority_title
+    - fct_title_acquisition_priority_object_type
+    - fct_title_acquisition_priority_licensing_recommendation
+  filters: {}
+  limit: 20
+  metrics:
+    - fct_title_acquisition_priority_total_churn_risk_demand
+    - fct_title_acquisition_priority_total_churn_risk_users
+    - fct_title_acquisition_priority_avg_composite_score
+  sorts:
+    - fieldId: fct_title_acquisition_priority_total_churn_risk_demand
+      descending: true
+tableConfig:
+  columnOrder:
+    - fct_title_acquisition_priority_title
+    - fct_title_acquisition_priority_object_type
+    - fct_title_acquisition_priority_total_churn_risk_demand
+    - fct_title_acquisition_priority_total_churn_risk_users
+    - fct_title_acquisition_priority_licensing_recommendation
+    - fct_title_acquisition_priority_avg_composite_score
