@@ -1,0 +1,47 @@
+contentType: chart
+name: "Holiday vs Non-Holiday AVOD Demand"
+slug: bar-holiday-vs-nonholiday
+spaceSlug: streamcap
+tableName: fct_title_seasonality
+version: 1
+chartConfig:
+  type: cartesian
+  config:
+    eChartsConfig:
+      legend:
+        show: true
+      series:
+        - type: bar
+          encode:
+            xRef:
+              field: fct_title_seasonality_is_holiday_window
+            yRef:
+              field: fct_title_seasonality_avg_weekly_avod_score
+          name: "Avg AVOD Score"
+          color: "#36A2EB"
+        - type: bar
+          encode:
+            xRef:
+              field: fct_title_seasonality_is_holiday_window
+            yRef:
+              field: fct_title_seasonality_avg_weekly_tvod_score
+          name: "Avg TVOD Score"
+          color: "#FF6384"
+    layout:
+      xField: fct_title_seasonality_is_holiday_window
+      yField:
+        - fct_title_seasonality_avg_weekly_avod_score
+        - fct_title_seasonality_avg_weekly_tvod_score
+metricQuery:
+  exploreName: fct_title_seasonality
+  tableCalculations: []
+  dimensions:
+    - fct_title_seasonality_is_holiday_window
+  filters: {}
+  limit: 10
+  metrics:
+    - fct_title_seasonality_avg_weekly_avod_score
+    - fct_title_seasonality_avg_weekly_tvod_score
+  sorts: []
+tableConfig:
+  columnOrder: []

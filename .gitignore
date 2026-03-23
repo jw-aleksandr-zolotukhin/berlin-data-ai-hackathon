@@ -4,3 +4,7 @@
 # Logs
 logs/
 *.log
+/.idea/modules.xml
+/.idea/vcs.xml
+/.idea/berlin-data-ai-hackathon.iml
+/.idea/.gitignore

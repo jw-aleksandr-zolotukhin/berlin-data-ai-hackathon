@@ -1,0 +1,23 @@
+contentType: chart
+name: "KPI: Total Titles in Pipeline"
+slug: kpi-total-titles
+spaceSlug: streamcap
+tableName: fct_title_acquisition_priority
+version: 1
+chartConfig:
+  type: big_number
+  config:
+    label: "Titles in Pipeline"
+    selectedField: fct_title_acquisition_priority_total_titles
+    showBigNumberLabel: true
+metricQuery:
+  exploreName: fct_title_acquisition_priority
+  tableCalculations: []
+  dimensions: []
+  filters: {}
+  limit: 1
+  metrics:
+    - fct_title_acquisition_priority_total_titles
+  sorts: []
+tableConfig:
+  columnOrder: []

@@ -1,0 +1,379 @@
+contentType: dashboard
+name: "StreamCap Content Licensing Intelligence"
+slug: streamcap-licensing-dashboard
+spaceSlug: streamcap
+description: "Which titles should JustWatch license for AVOD and TVOD? Strategic and operational content acquisition intelligence built on actual user demand signals."
+version: 1
+config:
+  isDateZoomDisabled: true
+  isAddFilterDisabled: false
+filters:
+  dimensions:
+    - label: "Content Type"
+      operator: equals
+      target:
+        fieldId: fct_title_acquisition_priority_object_type
+        tableName: fct_title_acquisition_priority
+      tileTargets: {}
+      values: []
+    - label: "Cost Tier"
+      operator: equals
+      target:
+        fieldId: fct_title_acquisition_priority_cost_tier
+        tableName: fct_title_acquisition_priority
+      tileTargets: {}
+      values: []
+
+tabs:
+  - name: "Executive Summary"
+    order: 0
+    uuid: "4575ce89-0171-4e9a-a494-74b61c0a00f3"
+  - name: "AVOD Opportunities"
+    order: 1
+    uuid: "499b3d34-3cf3-421c-aa80-19d6ecc2d9e7"
+  - name: "TVOD Intelligence"
+    order: 2
+    uuid: "86d9698d-fba8-4aea-a6c6-c000c0457e2a"
+  - name: "Genre & Market Strategy"
+    order: 3
+    uuid: "d2becc23-5594-40d2-985a-a0d0bee8edaa"
+  - name: "Seasonality"
+    order: 4
+    uuid: "2c7c4aef-3172-4a62-8846-442b0f0724ff"
+  - name: "Audience Segments"
+    order: 5
+    uuid: "c95f1ab8-7b7c-47c9-969e-8eb11d4bdf81"
+
+tiles:
+
+  # ── Tab 1: Executive Summary ───────────────────────────────────────────────
+
+  - type: markdown
+    tabUuid: "4575ce89-0171-4e9a-a494-74b61c0a00f3"
+    x: 0
+    y: 0
+    w: 36
+    h: 2
+    properties:
+      title: ""
+      content: |
+        ## StreamCap Licensing Intelligence
+        Content acquisition is the single largest cost for any streaming service. This dashboard ranks titles by estimated revenue potential vs licensing cost — built on actual JustWatch user demand signals, not gut feel.
+
+  - type: saved_chart
+    tabUuid: "4575ce89-0171-4e9a-a494-74b61c0a00f3"
+    x: 0
+    y: 2
+    w: 9
+    h: 4
+    properties:
+      chartSlug: kpi-total-titles
+      title: "Titles in Pipeline"
+
+  - type: saved_chart
+    tabUuid: "4575ce89-0171-4e9a-a494-74b61c0a00f3"
+    x: 9
+    y: 2
+    w: 9
+    h: 4
+    properties:
+      chartSlug: kpi-total-revenue
+      title: "Est. Pipeline Revenue"
+
+  - type: saved_chart
+    tabUuid: "4575ce89-0171-4e9a-a494-74b61c0a00f3"
+    x: 18
+    y: 2
+    w: 9
+    h: 4
+    properties:
+      chartSlug: kpi-avod-gap-opportunities
+      title: "AVOD Gap Opportunities"
+
+  - type: saved_chart
+    tabUuid: "4575ce89-0171-4e9a-a494-74b61c0a00f3"
+    x: 27
+    y: 2
+    w: 9
+    h: 4
+    properties:
+      chartSlug: kpi-churn-prevention-titles
+      title: "Churn Prevention Titles"
+
+  - type: saved_chart
+    tabUuid: "4575ce89-0171-4e9a-a494-74b61c0a00f3"
+    x: 0
+    y: 6
+    w: 36
+    h: 10
+    properties:
+      chartSlug: table-top-acquisition-priorities
+      title: "Top 25 Content Acquisition Priorities"
+
+  - type: saved_chart
+    tabUuid: "4575ce89-0171-4e9a-a494-74b61c0a00f3"
+    x: 0
+    y: 16
+    w: 18
+    h: 8
+    properties:
+      chartSlug: bar-titles-by-acquisition-tier
+      title: "Titles by Acquisition Tier"
+
+  - type: saved_chart
+    tabUuid: "4575ce89-0171-4e9a-a494-74b61c0a00f3"
+    x: 18
+    y: 16
+    w: 18
+    h: 8
+    properties:
+      chartSlug: bar-strategic-flags
+      title: "Titles by Licensing Recommendation"
+
+  # ── Tab 2: AVOD Opportunities ──────────────────────────────────────────────
+
+  - type: heading
+    tabUuid: "499b3d34-3cf3-421c-aa80-19d6ecc2d9e7"
+    x: 0
+    y: 0
+    w: 36
+    h: 1
+    properties:
+      text: "AVOD Gap Analysis — High Demand, No Free Supply"
+
+  - type: markdown
+    tabUuid: "499b3d34-3cf3-421c-aa80-19d6ecc2d9e7"
+    x: 0
+    y: 1
+    w: 36
+    h: 2
+    properties:
+      title: ""
+      content: |
+        **AVOD opportunity = title has user engagement (page views, watchlist adds, free clickouts) but no current free/ad-supported supply.** These are gaps a new provider can fill. Binger-driven titles (top-quartile AVOD users) are the highest-confidence picks.
+
+  - type: saved_chart
+    tabUuid: "499b3d34-3cf3-421c-aa80-19d6ecc2d9e7"
+    x: 0
+    y: 3
+    w: 18
+    h: 10
+    properties:
+      chartSlug: bar-top-avod-roi
+      title: "Top 20 Titles by AVOD ROI Score"
+
+  - type: saved_chart
+    tabUuid: "499b3d34-3cf3-421c-aa80-19d6ecc2d9e7"
+    x: 18
+    y: 3
+    w: 18
+    h: 10
+    properties:
+      chartSlug: table-avod-gap-titles
+      title: "AVOD Gap Titles (Underserved + Binger Demand)"
+
+  # ── Tab 3: TVOD Intelligence ───────────────────────────────────────────────
+
+  - type: heading
+    tabUuid: "86d9698d-fba8-4aea-a6c6-c000c0457e2a"
+    x: 0
+    y: 0
+    w: 36
+    h: 1
+    properties:
+      text: "TVOD Demand & TVOD-to-AVOD Pipeline"
+
+  - type: markdown
+    tabUuid: "86d9698d-fba8-4aea-a6c6-c000c0457e2a"
+    x: 0
+    y: 1
+    w: 36
+    h: 2
+    properties:
+      title: ""
+      content: |
+        **TVOD-to-AVOD pipeline:** titles where users already pay to watch (rent/buy clickouts) but no free option exists. Licensing AVOD rights for these titles is a market-disrupting move — proven demand, zero free competition. Whale-segment demand (top TVOD users) is the strongest revenue signal.
+
+  - type: saved_chart
+    tabUuid: "86d9698d-fba8-4aea-a6c6-c000c0457e2a"
+    x: 0
+    y: 3
+    w: 18
+    h: 10
+    properties:
+      chartSlug: bar-top-tvod-roi
+      title: "Top 20 Titles by TVOD ROI Score"
+
+  - type: saved_chart
+    tabUuid: "86d9698d-fba8-4aea-a6c6-c000c0457e2a"
+    x: 18
+    y: 3
+    w: 18
+    h: 10
+    properties:
+      chartSlug: table-tvod-to-avod-candidates
+      title: "TVOD-to-AVOD Candidates"
+
+  # ── Tab 4: Genre & Market Strategy ────────────────────────────────────────
+
+  - type: heading
+    tabUuid: "d2becc23-5594-40d2-985a-a0d0bee8edaa"
+    x: 0
+    y: 0
+    w: 36
+    h: 1
+    properties:
+      text: "Genre Catalogue Strategy & Market Entry Prioritisation"
+
+  - type: saved_chart
+    tabUuid: "d2becc23-5594-40d2-985a-a0d0bee8edaa"
+    x: 0
+    y: 1
+    w: 18
+    h: 10
+    properties:
+      chartSlug: bar-genre-avod-share
+      title: "Genre AVOD Share (1=pure AVOD, 0=pure TVOD)"
+
+  - type: saved_chart
+    tabUuid: "d2becc23-5594-40d2-985a-a0d0bee8edaa"
+    x: 18
+    y: 1
+    w: 18
+    h: 10
+    properties:
+      chartSlug: bar-genre-demand-intensity
+      title: "AVOD vs TVOD Demand Intensity per Title by Genre"
+
+  - type: heading
+    tabUuid: "d2becc23-5594-40d2-985a-a0d0bee8edaa"
+    x: 0
+    y: 11
+    w: 36
+    h: 1
+    properties:
+      text: "Market Entry — Which Country to Launch AVOD in First?"
+
+  - type: saved_chart
+    tabUuid: "d2becc23-5594-40d2-985a-a0d0bee8edaa"
+    x: 0
+    y: 12
+    w: 18
+    h: 10
+    properties:
+      chartSlug: bar-market-opportunity
+      title: "Markets Ranked by AVOD Opportunity Score"
+
+  - type: saved_chart
+    tabUuid: "d2becc23-5594-40d2-985a-a0d0bee8edaa"
+    x: 18
+    y: 12
+    w: 18
+    h: 10
+    properties:
+      chartSlug: table-market-scorecard
+      title: "Market Entry Scorecard"
+
+  # ── Tab 5: Seasonality ────────────────────────────────────────────────────
+
+  - type: heading
+    tabUuid: "2c7c4aef-3172-4a62-8846-442b0f0724ff"
+    x: 0
+    y: 0
+    w: 36
+    h: 1
+    properties:
+      text: "Seasonal Demand Patterns — Nov 2025 to Jan 2026"
+
+  - type: markdown
+    tabUuid: "2c7c4aef-3172-4a62-8846-442b0f0724ff"
+    x: 0
+    y: 1
+    w: 36
+    h: 2
+    properties:
+      title: ""
+      content: |
+        Data from T3 (3-month window). **Holiday window = Dec 20 – Jan 6.** Titles with a large WoW score jump during this period are seasonally driven — license them before Dec 20 for maximum impact. Titles declining post-holiday may still be worth licensing at lower cost.
+
+  - type: saved_chart
+    tabUuid: "2c7c4aef-3172-4a62-8846-442b0f0724ff"
+    x: 0
+    y: 3
+    w: 36
+    h: 8
+    properties:
+      chartSlug: line-weekly-demand-trend
+      title: "Weekly AVOD & TVOD Demand (All Titles)"
+
+  - type: saved_chart
+    tabUuid: "2c7c4aef-3172-4a62-8846-442b0f0724ff"
+    x: 0
+    y: 11
+    w: 18
+    h: 8
+    properties:
+      chartSlug: bar-holiday-vs-nonholiday
+      title: "Holiday vs Non-Holiday Avg Weekly Demand"
+
+  - type: saved_chart
+    tabUuid: "2c7c4aef-3172-4a62-8846-442b0f0724ff"
+    x: 18
+    y: 11
+    w: 18
+    h: 8
+    properties:
+      chartSlug: table-top-seasonal-titles
+      title: "Top Titles by Holiday Demand Spike"
+
+  # ── Tab 6: Audience Segments ──────────────────────────────────────────────
+
+  - type: heading
+    tabUuid: "c95f1ab8-7b7c-47c9-969e-8eb11d4bdf81"
+    x: 0
+    y: 0
+    w: 36
+    h: 1
+    properties:
+      text: "Audience Segment Demand — Who Wants What?"
+
+  - type: markdown
+    tabUuid: "c95f1ab8-7b7c-47c9-969e-8eb11d4bdf81"
+    x: 0
+    y: 1
+    w: 36
+    h: 2
+    properties:
+      title: ""
+      content: |
+        **Whales** rent/buy content — strongest TVOD signal. **Bingers** browse and save free content — strongest AVOD signal. **Churn-risk users** were active early December but dropped off — titles they want are retention levers worth licensing even at higher cost.
+
+  - type: saved_chart
+    tabUuid: "c95f1ab8-7b7c-47c9-969e-8eb11d4bdf81"
+    x: 0
+    y: 3
+    w: 18
+    h: 8
+    properties:
+      chartSlug: bar-user-segments
+      title: "User Segment Distribution"
+
+  - type: saved_chart
+    tabUuid: "c95f1ab8-7b7c-47c9-969e-8eb11d4bdf81"
+    x: 18
+    y: 3
+    w: 18
+    h: 8
+    properties:
+      chartSlug: kpi-churn-prevention-titles
+      title: "Churn Prevention Titles"
+
+  - type: saved_chart
+    tabUuid: "c95f1ab8-7b7c-47c9-969e-8eb11d4bdf81"
+    x: 0
+    y: 11
+    w: 36
+    h: 10
+    properties:
+      chartSlug: table-churn-prevention
+      title: "Churn Prevention Acquisition Targets"

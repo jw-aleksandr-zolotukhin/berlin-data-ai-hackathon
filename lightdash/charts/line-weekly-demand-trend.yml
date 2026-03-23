@@ -1,0 +1,54 @@
+contentType: chart
+name: "Weekly AVOD & TVOD Demand Trend"
+slug: line-weekly-demand-trend
+spaceSlug: streamcap
+tableName: fct_title_seasonality
+version: 1
+chartConfig:
+  type: cartesian
+  config:
+    eChartsConfig:
+      legend:
+        show: true
+      series:
+        - type: line
+          smooth: true
+          encode:
+            xRef:
+              field: fct_title_seasonality_week_start_week
+            yRef:
+              field: fct_title_seasonality_total_weekly_avod_score
+          name: "AVOD Demand"
+          color: "#36A2EB"
+        - type: line
+          smooth: true
+          encode:
+            xRef:
+              field: fct_title_seasonality_week_start_week
+            yRef:
+              field: fct_title_seasonality_total_weekly_tvod_score
+          name: "TVOD Demand"
+          color: "#FF6384"
+      xAxis:
+        - name: "Week"
+    layout:
+      showGridY: true
+      xField: fct_title_seasonality_week_start_week
+      yField:
+        - fct_title_seasonality_total_weekly_avod_score
+        - fct_title_seasonality_total_weekly_tvod_score
+metricQuery:
+  exploreName: fct_title_seasonality
+  tableCalculations: []
+  dimensions:
+    - fct_title_seasonality_week_start_week
+  filters: {}
+  limit: 500
+  metrics:
+    - fct_title_seasonality_total_weekly_avod_score
+    - fct_title_seasonality_total_weekly_tvod_score
+  sorts:
+    - fieldId: fct_title_seasonality_week_start_week
+      descending: false
+tableConfig:
+  columnOrder: []

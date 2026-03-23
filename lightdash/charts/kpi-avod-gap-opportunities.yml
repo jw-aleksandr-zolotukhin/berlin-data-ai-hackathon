@@ -1,0 +1,23 @@
+contentType: chart
+name: "KPI: AVOD Gap Opportunities"
+slug: kpi-avod-gap-opportunities
+spaceSlug: streamcap
+tableName: fct_title_acquisition_priority
+version: 1
+chartConfig:
+  type: big_number
+  config:
+    label: "AVOD Gap Opportunities"
+    selectedField: fct_title_acquisition_priority_count_avod_gap_opportunities
+    showBigNumberLabel: true
+metricQuery:
+  exploreName: fct_title_acquisition_priority
+  tableCalculations: []
+  dimensions: []
+  filters: {}
+  limit: 1
+  metrics:
+    - fct_title_acquisition_priority_count_avod_gap_opportunities
+  sorts: []
+tableConfig:
+  columnOrder: []

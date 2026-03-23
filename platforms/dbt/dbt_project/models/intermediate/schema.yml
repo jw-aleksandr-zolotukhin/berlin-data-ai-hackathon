@@ -1,0 +1,1170 @@
+version: 2
+
+# ──────────────────────────────────────────────────────────────────────────────
+# INTERMEDIATE LAYER — StreamCap / JustWatch Content Licensing Intelligence
+#
+# Purpose: pre-aggregated feature tables that bridge cleaned base views and
+# analytics marts. All intermediate models are materialised as TABLE (not view)
+# because they perform expensive GROUP BYs over millions of event rows. Marts
+# can then join lightweight table scans rather than re-scanning the event stream.
+#
+# Naming convention: int_<subject>_<what it contains>.
+#
+# Dependency chain:
+#   base_events_t1 ──► int_title_demand_signals
+#   base_events_t1 ──► int_title_provider_supply  ──► base_packages
+#   base_events_t1 ──► int_title_market_demand
+#   base_events_t1 ──► int_user_activity
+# ──────────────────────────────────────────────────────────────────────────────
+
+models:
+
+  # ── int_title_monetization_profile ──────────────────────────────────────────
+  - name: int_title_monetization_profile
+    description: |
+      **Grain: one row per title_entity_id** (titles with ≥5 clickouts only)
+
+      Answers: what monetization model do users prefer for this title?
+      Uses clickout events as direct monetization intent signals.
+
+      dominant_monetization: whichever bucket (avod/tvod/svod) ≥50% of total clickouts.
+      monetization_signal: plain-English business recommendation for licensing.
+    columns:
+      - name: title_entity_id
+        description: "Primary key. JustWatch top-level title ID."
+        meta:
+          dimension:
+            type: string
+            label: "Title ID"
+          metrics:
+            title_count:
+              type: count_distinct
+              label: "Titles with Monetization Profile"
+              groups:
+                - "Volume"
+
+      - name: dominant_monetization
+        description: "'avod', 'tvod', 'svod', or 'mixed'."
+        meta:
+          dimension:
+            type: string
+            label: "Dominant Monetization"
+          metrics:
+            avod_dominant_titles:
+              type: count
+              label: "AVOD Dominant Titles"
+              filters:
+                - dominant_monetization: "avod"
+              groups:
+                - "Monetization Profile"
+            tvod_dominant_titles:
+              type: count
+              label: "TVOD Dominant Titles"
+              filters:
+                - dominant_monetization: "tvod"
+              groups:
+                - "Monetization Profile"
+            svod_dominant_titles:
+              type: count
+              label: "SVOD Dominant Titles"
+              filters:
+                - dominant_monetization: "svod"
+              groups:
+                - "Monetization Profile"
+
+      - name: monetization_signal
+        description: "'LICENSE FOR AVOD', 'LICENSE FOR TVOD', 'SKIP - ON SVOD', 'MIXED DEMAND'."
+        meta:
+          dimension:
+            type: string
+            label: "Monetization Signal"
+
+      - name: avod_clicks
+        description: "Clickouts to free/ads offers."
+        meta:
+          dimension:
+            type: number
+            label: "AVOD Clicks"
+          metrics:
+            total_avod_clicks:
+              type: sum
+              label: "Total AVOD Clicks"
+              compact: "thousands"
+              groups:
+                - "Demand Signals"
+
+      - name: tvod_clicks
+        description: "Clickouts to rent/buy/cinema offers."
+        meta:
+          dimension:
+            type: number
+            label: "TVOD Clicks"
+          metrics:
+            total_tvod_clicks:
+              type: sum
+              label: "Total TVOD Clicks"
+              compact: "thousands"
+              groups:
+                - "Demand Signals"
+
+      - name: svod_clicks
+        description: "Clickouts to flatrate/sports subscription offers."
+        meta:
+          dimension:
+            type: number
+            label: "SVOD Clicks"
+          metrics:
+            total_svod_clicks:
+              type: sum
+              label: "Total SVOD Clicks"
+              compact: "thousands"
+              groups:
+                - "Demand Signals"
+
+      - name: total_clickouts
+        description: "Total clickouts across all monetization types."
+        meta:
+          dimension:
+            type: number
+            label: "Total Clickouts"
+          metrics:
+            sum_total_clickouts:
+              type: sum
+              label: "Total Clickouts"
+              compact: "thousands"
+              groups:
+                - "Demand Signals"
+
+      - name: avod_pct
+        description: "Share of clickouts going to free/ads offers (0–100)."
+        meta:
+          dimension:
+            type: number
+            label: "AVOD %"
+          metrics:
+            avg_avod_pct:
+              type: average
+              label: "Avg AVOD Clickout Share %"
+              round: 1
+              groups:
+                - "Monetization Profile"
+
+      - name: tvod_pct
+        description: "Share of clickouts going to rent/buy/cinema offers (0–100)."
+        meta:
+          dimension:
+            type: number
+            label: "TVOD %"
+          metrics:
+            avg_tvod_pct:
+              type: average
+              label: "Avg TVOD Clickout Share %"
+              round: 1
+              groups:
+                - "Monetization Profile"
+
+      - name: svod_pct
+        description: "Share of clickouts going to subscription offers (0–100)."
+        meta:
+          dimension:
+            type: number
+            label: "SVOD %"
+          metrics:
+            avg_svod_pct:
+              type: average
+              label: "Avg SVOD Clickout Share %"
+              round: 1
+              groups:
+                - "Monetization Profile"
+
+      - name: is_tvod_only
+        description: "True: users pay to watch (TVOD) but no free/ads clicks observed."
+        meta:
+          dimension:
+            type: boolean
+            label: "TVOD Only"
+          metrics:
+            tvod_only_titles:
+              type: count
+              label: "TVOD-Only Titles"
+              filters:
+                - is_tvod_only: "true"
+              groups:
+                - "Monetization Profile"
+
+      - name: is_svod_exclusive
+        description: "True: only on subscription services, no free or transactional option clicked."
+        meta:
+          dimension:
+            type: boolean
+            label: "SVOD Exclusive"
+          metrics:
+            svod_exclusive_titles:
+              type: count
+              label: "SVOD-Exclusive Titles"
+              filters:
+                - is_svod_exclusive: "true"
+              groups:
+                - "Monetization Profile"
+
+  # ── int_title_demand_signals ─────────────────────────────────────────────────
+  - name: int_title_demand_signals
+    description: |
+      **Grain: one row per (title_entity_id, event_date)**
+
+      Daily demand signal counts per top-level title. This is the central
+      pre-aggregation table for the licensing ROI models. By aggregating at the
+      (title, day) grain rather than the title-only grain, the model serves both:
+      - `fct_title_licensing_score` — which rolls up across all dates for total scores
+      - `fct_title_seasonality` — which groups by week to reveal holiday demand spikes
+
+      **Signal taxonomy** follows the StreamCap scoring framework:
+      - **AVOD signals** (ad-supported demand): page views, watchlist adds, trailer plays, free/ads clickouts
+      - **TVOD signals** (transactional demand): rent, buy, cinema clickouts
+      - **SVOD signals** (subscription competitor): flatrate, sports clickouts
+
+      **Why separate rent / buy / cinema:** the mart layer applies different
+      weights to each (`rent × 10`, `buy × 8`, `cinema × 6`) reflecting
+      decreasing transactional intent. Keeping them separate here preserves
+      optionality for downstream re-weighting without re-running this model.
+
+      **Source:** `base_events_t1`. Change the `ref()` to `base_events_t2` or
+      `base_events_t3` for broader market / longer time-window analysis.
+    meta:
+      metrics:
+        avod_tvod_clickout_ratio:
+          type: number
+          sql: "SUM(${TABLE}.avod_clickouts) / NULLIF(SUM(${TABLE}.tvod_clickouts), 0)"
+          label: "AVOD/TVOD Clickout Ratio"
+          description: "Ratio of AVOD to TVOD clickouts — higher = more free/ads demand vs transactional."
+          round: 2
+          groups:
+            - "Demand Signals"
+        avg_daily_engagement:
+          type: number
+          sql: "AVG(${TABLE}.unique_users)"
+          label: "Avg Daily Unique Users"
+          round: 0
+          groups:
+            - "Volume"
+    columns:
+      - name: title_entity_id
+        description: "JustWatch top-level title ID. Part of the composite primary key. Join to `base_objects.object_id` for title metadata. Foreign key to `fct_title_licensing_score.title_entity_id`."
+        meta:
+          dimension:
+            type: string
+            label: "Title ID"
+          metrics:
+            distinct_titles:
+              type: count_distinct
+              label: "Unique Titles"
+              groups:
+                - "Volume"
+
+      - name: event_date
+        description: "Calendar date (`DATE_TRUNC('day', collector_tstamp)`). Part of the composite primary key. Used for weekly aggregation in `fct_title_seasonality`."
+        meta:
+          dimension:
+            type: date
+            label: "Event Date"
+            time_intervals:
+              - DAY
+              - WEEK
+              - MONTH
+          metrics:
+            active_days:
+              type: count_distinct
+              label: "Active Days"
+              groups:
+                - "Volume"
+
+      - name: page_views
+        description: "Count of `event = 'page_view'` events for this title on this date. Passive engagement proxy — a user viewing the title detail page without clicking anything. Weight 1 in the AVOD score formula."
+        meta:
+          dimension:
+            type: number
+            label: "Page Views"
+          metrics:
+            total_page_views:
+              type: sum
+              label: "Total Page Views"
+              compact: "millions"
+              groups:
+                - "AVOD Signals"
+            avg_daily_page_views:
+              type: average
+              label: "Avg Daily Page Views"
+              round: 0
+              groups:
+                - "AVOD Signals"
+
+      - name: title_clicks
+        description: "Count of `se_category = 'userinteraction' AND se_action = 'title_clicked'`. Active engagement — the user deliberately clicked on a title card. Weight 2 in the AVOD score formula."
+        meta:
+          dimension:
+            type: number
+            label: "Title Clicks"
+          metrics:
+            total_title_clicks:
+              type: sum
+              label: "Total Title Clicks"
+              compact: "thousands"
+              groups:
+                - "AVOD Signals"
+            avg_daily_title_clicks:
+              type: average
+              label: "Avg Daily Title Clicks"
+              round: 0
+              groups:
+                - "AVOD Signals"
+
+      - name: watchlist_adds
+        description: |
+          Count of `se_category = 'watchlist_add'`. Strongest passive demand signal
+          in the dataset — a user explicitly saving a title for later. Weight 5 in the AVOD
+          score formula, reflecting its higher intent compared to a casual page view.
+        meta:
+          dimension:
+            type: number
+            label: "Watchlist Adds"
+          metrics:
+            total_watchlist_adds:
+              type: sum
+              label: "Total Watchlist Adds"
+              compact: "thousands"
+              groups:
+                - "AVOD Signals"
+            avg_daily_watchlist_adds:
+              type: average
+              label: "Avg Daily Watchlist Adds"
+              round: 1
+              groups:
+                - "AVOD Signals"
+
+      - name: seenlist_adds
+        description: "Count of `se_category = 'seenlist_add'`. User marking the title as already seen. Engagement signal with weight 3 in the AVOD formula."
+        meta:
+          dimension:
+            type: number
+            label: "Seenlist Adds"
+          metrics:
+            total_seenlist_adds:
+              type: sum
+              label: "Total Seenlist Adds"
+              compact: "thousands"
+              groups:
+                - "AVOD Signals"
+
+      - name: likes
+        description: "Count of `se_category = 'likelist_add'`. Explicit positive preference signal. Weight 4 in the AVOD formula."
+        meta:
+          dimension:
+            type: number
+            label: "Likes"
+          metrics:
+            total_likes:
+              type: sum
+              label: "Total Likes"
+              compact: "thousands"
+              groups:
+                - "AVOD Signals"
+
+      - name: trailer_plays
+        description: "Count of `se_category = 'youtube_started'`. Research behaviour indicating active title consideration. Weight 2 in the AVOD formula."
+        meta:
+          dimension:
+            type: number
+            label: "Trailer Plays"
+          metrics:
+            total_trailer_plays:
+              type: sum
+              label: "Total Trailer Plays"
+              compact: "thousands"
+              groups:
+                - "AVOD Signals"
+
+      - name: avod_clickouts
+        description: |
+          Count of `se_category = 'clickout' AND se_action IN ('free', 'ads')`.
+          **Direct AVOD intent signal** — the user clicked through to a free or
+          ad-supported offer. Highest weight (10) in the AVOD score formula.
+          Used in `int_title_provider_supply` to infer that a free/ads offer exists.
+        meta:
+          dimension:
+            type: number
+            label: "AVOD Clickouts"
+          metrics:
+            total_avod_clickouts:
+              type: sum
+              label: "Total AVOD Clickouts"
+              compact: "thousands"
+              groups:
+                - "AVOD Signals"
+            avg_daily_avod_clickouts:
+              type: average
+              label: "Avg Daily AVOD Clickouts"
+              round: 1
+              groups:
+                - "AVOD Signals"
+
+      - name: rent_clickouts
+        description: "Count of `se_category = 'clickout' AND se_action = 'rent'`. Direct transactional rent intent. Weight 10 in the TVOD score — the strongest individual signal."
+        meta:
+          dimension:
+            type: number
+            label: "Rent Clickouts"
+          metrics:
+            total_rent_clickouts:
+              type: sum
+              label: "Total Rent Clickouts"
+              compact: "thousands"
+              groups:
+                - "TVOD Signals"
+
+      - name: buy_clickouts
+        description: "Count of `se_category = 'clickout' AND se_action = 'buy'`. Transactional ownership intent. Weight 8 in the TVOD score."
+        meta:
+          dimension:
+            type: number
+            label: "Buy Clickouts"
+          metrics:
+            total_buy_clickouts:
+              type: sum
+              label: "Total Buy Clickouts"
+              compact: "thousands"
+              groups:
+                - "TVOD Signals"
+
+      - name: cinema_clickouts
+        description: "Count of `se_category = 'clickout' AND se_action = 'cinema'`. Cinema screening clickouts. Weight 6 in the TVOD score."
+        meta:
+          dimension:
+            type: number
+            label: "Cinema Clickouts"
+          metrics:
+            total_cinema_clickouts:
+              type: sum
+              label: "Total Cinema Clickouts"
+              compact: "thousands"
+              groups:
+                - "TVOD Signals"
+
+      - name: tvod_clickouts
+        description: "Sum of rent + buy + cinema clickouts. Convenience aggregate used in `fct_title_seasonality`."
+        meta:
+          dimension:
+            type: number
+            label: "TVOD Clickouts"
+          metrics:
+            total_tvod_clickouts:
+              type: sum
+              label: "Total TVOD Clickouts"
+              compact: "thousands"
+              groups:
+                - "TVOD Signals"
+            avg_daily_tvod_clickouts:
+              type: average
+              label: "Avg Daily TVOD Clickouts"
+              round: 1
+              groups:
+                - "TVOD Signals"
+
+      - name: svod_clickouts
+        description: "Count of `se_category = 'clickout' AND se_action IN ('flatrate', 'sports')`. Competitor subscription platform clicks. Used as a negative supply signal in `fct_title_licensing_score` (`has_svod_supply`) and in `int_user_activity` for user segmentation."
+        meta:
+          dimension:
+            type: number
+            label: "SVOD Clickouts"
+          metrics:
+            total_svod_clickouts:
+              type: sum
+              label: "Total SVOD Clickouts"
+              compact: "thousands"
+              groups:
+                - "SVOD Signals"
+
+      - name: total_clickouts
+        description: "Total clickout events for this title on this date regardless of monetisation type."
+        meta:
+          dimension:
+            type: number
+            label: "Total Clickouts"
+          metrics:
+            total_all_clickouts:
+              type: sum
+              label: "Total Clickouts (all types)"
+              compact: "thousands"
+              groups:
+                - "Demand Signals"
+            avg_daily_total_clickouts:
+              type: average
+              label: "Avg Daily Total Clickouts"
+              round: 1
+              groups:
+                - "Demand Signals"
+
+      - name: unique_users
+        description: |
+          Count of distinct `user_id` values per (title, date).
+          Note: rolling this up across dates with `SUM()` in `fct_title_licensing_score`
+          produces user-day counts, not true unique users per title. This is documented
+          as `total_user_engagements` in the mart and is noted as an over-count.
+        meta:
+          dimension:
+            type: number
+            label: "Unique Users (Daily)"
+          metrics:
+            total_user_day_engagements:
+              type: sum
+              label: "Total User-Day Engagements"
+              compact: "millions"
+              description: "Sum of daily unique user counts — double-counts cross-day users."
+              groups:
+                - "Volume"
+            avg_unique_users_per_title_day:
+              type: average
+              label: "Avg Unique Users per Title-Day"
+              round: 1
+              groups:
+                - "Volume"
+            max_daily_unique_users:
+              type: max
+              label: "Peak Daily Unique Users"
+              groups:
+                - "Volume"
+
+      - name: unique_sessions
+        description: "Count of distinct `session_id` values per (title, date)."
+        meta:
+          dimension:
+            type: number
+            label: "Unique Sessions (Daily)"
+          metrics:
+            total_sessions:
+              type: sum
+              label: "Total Sessions"
+              compact: "millions"
+              groups:
+                - "Volume"
+
+      - name: market_count
+        description: "Count of distinct `app_locale` values with activity for this title on this date. Note: `MAX(market_count)` in the mart gives peak single-day market breadth; `int_title_market_demand` gives true cross-period market count."
+        meta:
+          dimension:
+            type: number
+            label: "Markets Active (Daily)"
+          metrics:
+            avg_daily_market_count:
+              type: average
+              label: "Avg Daily Market Count"
+              round: 1
+              groups:
+                - "Market Insights"
+            max_market_count:
+              type: max
+              label: "Peak Daily Market Reach"
+              groups:
+                - "Market Insights"
+
+  # ── int_title_provider_supply ─────────────────────────────────────────────────
+  - name: int_title_provider_supply
+    description: |
+      **Grain: one row per (title_entity_id, provider_id, monetization_type)**
+
+      Infers which streaming providers currently offer each title and at what
+      price point, using clickout events as a supply proxy.
+
+      **Why clickouts as a supply signal:** JustWatch does not provide a catalogue
+      feed in this dataset. A user can only click out to a provider offer if that
+      offer exists on JustWatch. Therefore, a clickout to provider X with
+      monetisation type `'flatrate'` is strong evidence that the title is
+      available on X as a subscription. Zero clickouts means either no supply
+      OR no demand — context-dependent.
+
+      **Limitation:** supply is inferred globally, not per market. A title
+      available on Netflix Germany but not Netflix France will appear as
+      `has_avod_supply = true` in `fct_market_demand_gap` regardless of which
+      market the user was in when they clicked. This is an acceptable approximation
+      for the hackathon scope.
+
+      **monetization_bucket** groups the raw `clickout_monetization_type` values
+      into three strategic buckets: `avod` (free/ads), `tvod` (rent/buy/cinema),
+      `svod` (flatrate/sports). These buckets map directly to the three streaming
+      business models JustWatch is evaluating.
+    meta:
+      metrics:
+        unique_provider_title_combinations:
+          type: number
+          sql: "COUNT(*)"
+          label: "Provider-Title Supply Combinations"
+          groups:
+            - "Volume"
+    columns:
+      - name: title_entity_id
+        description: "Part of the composite primary key. Join to `base_objects.object_id` for title metadata, or to `int_title_demand_signals.title_entity_id` for demand context."
+        meta:
+          dimension:
+            type: string
+            label: "Title ID"
+          metrics:
+            unique_titles_with_supply:
+              type: count_distinct
+              label: "Unique Titles with Supply"
+              groups:
+                - "Volume"
+
+      - name: provider_id
+        description: "Part of the composite primary key. Resolved from `clickout_provider_id`. Join to `base_packages.provider_id` for provider names."
+        meta:
+          dimension:
+            type: number
+            label: "Provider ID"
+          metrics:
+            unique_providers:
+              type: count_distinct
+              label: "Unique Providers"
+              groups:
+                - "Volume"
+
+      - name: monetization_type
+        description: "Part of the composite primary key. The per-event monetisation type from `clickout_monetization_type`. One of: `'free'`, `'ads'`, `'rent'`, `'buy'`, `'cinema'`, `'flatrate'`, `'sports'`."
+        meta:
+          dimension:
+            type: string
+            label: "Monetization Type"
+
+      - name: unique_users_clicking
+        description: "Count of distinct `user_id` values that clicked this title on this provider at this monetisation type. Higher values indicate stronger supply-side demand signal."
+        meta:
+          dimension:
+            type: number
+            label: "Unique Users Clicking"
+          metrics:
+            total_unique_users_supply:
+              type: sum
+              label: "Total Users Clicking (Supply)"
+              compact: "thousands"
+              groups:
+                - "Volume"
+            avg_users_per_provider_offer:
+              type: average
+              label: "Avg Users per Provider Offer"
+              round: 1
+              groups:
+                - "Volume"
+
+      - name: clickout_count
+        description: "Total clickout events for this (title, provider, monetisation_type) combination."
+        meta:
+          dimension:
+            type: number
+            label: "Clickout Count"
+          metrics:
+            total_supply_clickouts:
+              type: sum
+              label: "Total Clickouts (by Provider)"
+              compact: "thousands"
+              groups:
+                - "Volume"
+            avg_clickouts_per_offer:
+              type: average
+              label: "Avg Clickouts per Provider Offer"
+              round: 1
+              groups:
+                - "Volume"
+
+      - name: provider_technical_name
+        description: "Resolved from `base_packages.technical_name` via `provider_id` join. Stable identifier for code-level grouping."
+        meta:
+          dimension:
+            type: string
+            label: "Provider (Technical Name)"
+
+      - name: provider_clear_name
+        description: "Resolved from `base_packages.clear_name`. Human-readable provider name for dashboard display."
+        meta:
+          dimension:
+            type: string
+            label: "Provider Name"
+
+      - name: monetization_bucket
+        description: |
+          Strategic grouping of `monetization_type`:
+          `'avod'` — `free` or `ads` offers.
+          `'tvod'` — `rent`, `buy`, or `cinema` offers.
+          `'svod'` — `flatrate` or `sports` subscription offers.
+          Used in `fct_title_licensing_score` to compute `has_avod_supply`, `has_tvod_supply`,
+          `has_svod_supply` boolean flags and their provider counts.
+        meta:
+          dimension:
+            type: string
+            label: "Monetization Bucket"
+          metrics:
+            avod_supply_offers:
+              type: count
+              label: "AVOD Supply Offers"
+              filters:
+                - monetization_bucket: "avod"
+              groups:
+                - "Supply Coverage"
+            tvod_supply_offers:
+              type: count
+              label: "TVOD Supply Offers"
+              filters:
+                - monetization_bucket: "tvod"
+              groups:
+                - "Supply Coverage"
+            svod_supply_offers:
+              type: count
+              label: "SVOD Supply Offers"
+              filters:
+                - monetization_bucket: "svod"
+              groups:
+                - "Supply Coverage"
+
+  # ── int_title_market_demand ──────────────────────────────────────────────────
+  - name: int_title_market_demand
+    description: |
+      **Grain: one row per (title_entity_id, app_locale)**
+
+      Breaks demand signals out by the user's chosen market (`app_locale`), not
+      their physical location (`geo_country`). This distinction is critical for
+      cross-market licensing ROI analysis.
+
+      **Why `app_locale` and not `geo_country`:** A German expat browsing JustWatch
+      from France has `geo_country = 'FR'` but `app_locale = 'de_DE'`. Their demand
+      signal belongs to the German market for content licensing purposes — they want
+      German-relevant content. Using `geo_country` would misattribute this demand
+      to France and distort market entry scores.
+
+      **Demand scores** use the same weights as `fct_title_licensing_score` to
+      ensure consistency: AVOD demand = `page_views × 1 + watchlist_adds × 5 +
+      avod_clickouts × 10`. TVOD demand = `tvod_clickouts × 10`.
+
+      This model feeds `fct_market_demand_gap` which produces the market entry
+      scorecard: which market has the highest AVOD demand relative to the supply
+      of free/ads titles?
+
+      **Source:** `base_events_t1` (Germany only prototype). Switch to
+      `base_events_t2` to get meaningful multi-market results.
+    meta:
+      metrics:
+        cross_market_title_coverage:
+          type: number
+          sql: "COUNT(DISTINCT ${TABLE}.title_entity_id) / NULLIF(COUNT(DISTINCT ${TABLE}.app_locale), 0)::float"
+          label: "Avg Titles per Market"
+          round: 0
+          groups:
+            - "Market Insights"
+    columns:
+      - name: title_entity_id
+        description: "Part of the composite primary key. Join to `base_objects.object_id` or `fct_title_licensing_score.title_entity_id`."
+        meta:
+          dimension:
+            type: string
+            label: "Title ID"
+          metrics:
+            unique_titles_cross_market:
+              type: count_distinct
+              label: "Unique Titles Across Markets"
+              groups:
+                - "Volume"
+
+      - name: app_locale
+        description: |
+          Part of the composite primary key. The user's chosen market locale
+          (e.g. `'de_DE'`, `'en_GB'`). **Not** the physical location (`geo_country`).
+          This is the correct market dimension for licensing ROI analysis.
+        meta:
+          dimension:
+            type: string
+            label: "Market (app_locale)"
+          metrics:
+            unique_markets:
+              type: count_distinct
+              label: "Unique Markets"
+              groups:
+                - "Market Insights"
+
+      - name: avod_demand
+        description: "Weighted AVOD demand score for this title in this market: `page_views × 1 + watchlist_adds × 5 + avod_clickouts × 10`. Consistent with the formula in `fct_title_licensing_score`."
+        meta:
+          dimension:
+            type: number
+            label: "AVOD Demand"
+          metrics:
+            total_cross_market_avod:
+              type: sum
+              label: "Total AVOD Demand (all markets)"
+              compact: "millions"
+              groups:
+                - "AVOD Demand"
+            avg_avod_per_title_market:
+              type: average
+              label: "Avg AVOD Demand per Title-Market"
+              round: 1
+              groups:
+                - "AVOD Demand"
+            max_avod_single_market:
+              type: max
+              label: "Peak AVOD Demand (single market)"
+              groups:
+                - "AVOD Demand"
+
+      - name: tvod_demand
+        description: "Weighted TVOD demand score for this title in this market: `tvod_clickouts × 10`."
+        meta:
+          dimension:
+            type: number
+            label: "TVOD Demand"
+          metrics:
+            total_cross_market_tvod:
+              type: sum
+              label: "Total TVOD Demand (all markets)"
+              compact: "thousands"
+              groups:
+                - "TVOD Demand"
+            avg_tvod_per_title_market:
+              type: average
+              label: "Avg TVOD Demand per Title-Market"
+              round: 1
+              groups:
+                - "TVOD Demand"
+
+      - name: unique_users
+        description: "Distinct `user_id` count in this market with any event for this title."
+        meta:
+          dimension:
+            type: number
+            label: "Unique Users (Market)"
+          metrics:
+            total_cross_market_users:
+              type: sum
+              label: "Total User-Market Engagements"
+              compact: "millions"
+              description: "Sum across all title-market combinations. Cross-market users are double-counted."
+              groups:
+                - "Volume"
+            avg_users_per_title_market:
+              type: average
+              label: "Avg Users per Title-Market"
+              round: 1
+              groups:
+                - "Volume"
+
+  # ── int_user_activity ─────────────────────────────────────────────────────────
+  - name: int_user_activity
+    description: |
+      **Grain: one row per user_id**
+
+      Per-user behavioral feature matrix. This is the foundation for customer
+      segmentation in `fct_user_segments`. All signal counts are lifetime totals
+      across the T1 window (Germany, December 2025).
+
+      **Churn detection split:** the model counts events in two equal-ish
+      December halves — early (Dec 1–14, 14 days) and recent (Dec 15–31, 17 days).
+      In `fct_user_segments`, these counts are compared as daily rates
+      (early_events / 14 vs recent_events / 17) to determine whether a user's
+      engagement has dropped by more than 50 %. This approach works within
+      a single-month dataset because T1 only covers December 2025.
+
+      **Primary market:** the most frequently used `app_locale` per user is
+      computed via a subquery with `QUALIFY ROW_NUMBER() ... = 1`. Using the modal
+      locale (rather than MAX or LAST) ensures a user who temporarily switches
+      markets is still attributed to their home market.
+
+      **login_id:** aggregated with `MAX()` to pick any non-null login ID across
+      the user's events. Most events for a device are not authenticated, so a single
+      row can contain both NULL and non-null login IDs across different events.
+    meta:
+      metrics:
+        authenticated_user_rate:
+          type: number
+          sql: "COUNT(CASE WHEN ${TABLE}.login_id IS NOT NULL THEN 1 END)::float / NULLIF(COUNT(*), 0) * 100"
+          label: "Authenticated User Rate %"
+          description: "Percentage of users who authenticated at least once."
+          round: 1
+          groups:
+            - "User Overview"
+        avg_avod_signals_per_day:
+          type: number
+          sql: |
+            AVG(
+              (${TABLE}.title_page_views + ${TABLE}.watchlist_adds + ${TABLE}.avod_clickouts)
+              / NULLIF(${TABLE}.active_days, 0)
+            )
+          label: "Avg AVOD Signals per Active Day"
+          round: 2
+          groups:
+            - "AVOD Signals"
+    columns:
+      - name: user_id
+        description: "Primary key. Anonymous device/browser ID from `base_events_t1`. Used as the join key to `fct_user_segments` and `fct_segment_title_demand`."
+        meta:
+          dimension:
+            type: string
+            label: "User ID"
+          metrics:
+            total_users:
+              type: count_distinct
+              label: "Total Users"
+              groups:
+                - "User Overview"
+
+      - name: login_id
+        description: "Any non-null login ID observed for this user, via `MAX(login_id)`. NULL if the user never authenticated during the observation window."
+        meta:
+          dimension:
+            type: string
+            label: "Login ID"
+          metrics:
+            authenticated_users:
+              type: count
+              label: "Authenticated Users"
+              description: "Count of users who have a non-null login_id."
+              filters:
+                - login_id: "!null"
+              groups:
+                - "User Overview"
+
+      - name: primary_market
+        description: "The `app_locale` value this user used most frequently. Determined by `COUNT(*)` per locale with `QUALIFY ROW_NUMBER() = 1`. Represents the user's home market."
+        meta:
+          dimension:
+            type: string
+            label: "Primary Market"
+
+      - name: active_days
+        description: "Distinct calendar dates with at least one event. Used as the denominator in `fct_user_segments` intent score normalisation (`avod_intent_raw = avod_signals / active_days`)."
+        meta:
+          dimension:
+            type: number
+            label: "Active Days"
+          metrics:
+            avg_active_days:
+              type: average
+              label: "Avg Active Days per User"
+              round: 1
+              groups:
+                - "User Engagement"
+            max_active_days:
+              type: max
+              label: "Max Active Days"
+              groups:
+                - "User Engagement"
+            total_active_days:
+              type: sum
+              label: "Total User-Active Days"
+              compact: "millions"
+              groups:
+                - "User Engagement"
+
+      - name: total_sessions
+        description: "Distinct `session_id` count across all events for this user."
+        meta:
+          dimension:
+            type: number
+            label: "Total Sessions"
+          metrics:
+            avg_sessions_per_user:
+              type: average
+              label: "Avg Sessions per User"
+              round: 1
+              groups:
+                - "User Engagement"
+            total_sessions_all:
+              type: sum
+              label: "Total Sessions"
+              compact: "millions"
+              groups:
+                - "User Engagement"
+
+      - name: total_events
+        description: "Total event count for this user across the observation window."
+        meta:
+          dimension:
+            type: number
+            label: "Total Events"
+          metrics:
+            avg_events_per_user:
+              type: average
+              label: "Avg Events per User"
+              round: 1
+              groups:
+                - "User Engagement"
+            total_events_all:
+              type: sum
+              label: "Total Events"
+              compact: "millions"
+              groups:
+                - "User Engagement"
+
+      - name: title_page_views
+        description: "Count of `event = 'page_view'` where `title_entity_id IS NOT NULL`. Content-specific page views, excluding homepage/search/genre browsing."
+        meta:
+          dimension:
+            type: number
+            label: "Title Page Views"
+          metrics:
+            avg_title_pv_per_user:
+              type: average
+              label: "Avg Title Page Views per User"
+              round: 1
+              groups:
+                - "AVOD Signals"
+            total_title_pv:
+              type: sum
+              label: "Total Title Page Views"
+              compact: "millions"
+              groups:
+                - "AVOD Signals"
+
+      - name: watchlist_adds
+        description: "Count of `se_category = 'watchlist_add'`. High-intent AVOD signal. Weight 5 in `fct_user_segments.avod_intent_raw`."
+        meta:
+          dimension:
+            type: number
+            label: "Watchlist Adds"
+          metrics:
+            avg_watchlist_per_user:
+              type: average
+              label: "Avg Watchlist Adds per User"
+              round: 1
+              groups:
+                - "AVOD Signals"
+            total_watchlist:
+              type: sum
+              label: "Total Watchlist Adds"
+              compact: "thousands"
+              groups:
+                - "AVOD Signals"
+
+      - name: avod_clickouts
+        description: "Count of `se_category = 'clickout' AND se_action IN ('free', 'ads')`. Direct AVOD intent. Weight 10 in `fct_user_segments.avod_intent_raw`."
+        meta:
+          dimension:
+            type: number
+            label: "AVOD Clickouts"
+          metrics:
+            avg_avod_clickouts_per_user:
+              type: average
+              label: "Avg AVOD Clickouts per User"
+              round: 2
+              groups:
+                - "AVOD Signals"
+            total_avod_clickouts:
+              type: sum
+              label: "Total AVOD Clickouts"
+              compact: "thousands"
+              groups:
+                - "AVOD Signals"
+
+      - name: rent_clickouts
+        description: "Count of `se_category = 'clickout' AND se_action = 'rent'`. Direct TVOD intent. Weight 10 in `fct_user_segments.tvod_intent_raw`."
+        meta:
+          dimension:
+            type: number
+            label: "Rent Clickouts"
+          metrics:
+            avg_rent_per_user:
+              type: average
+              label: "Avg Rent Clickouts per User"
+              round: 2
+              groups:
+                - "TVOD Signals"
+            total_rent_clickouts:
+              type: sum
+              label: "Total Rent Clickouts"
+              compact: "thousands"
+              groups:
+                - "TVOD Signals"
+
+      - name: buy_clickouts
+        description: "Count of `se_category = 'clickout' AND se_action = 'buy'`. TVOD ownership intent. Weight 8 in `fct_user_segments.tvod_intent_raw`."
+        meta:
+          dimension:
+            type: number
+            label: "Buy Clickouts"
+          metrics:
+            avg_buy_per_user:
+              type: average
+              label: "Avg Buy Clickouts per User"
+              round: 2
+              groups:
+                - "TVOD Signals"
+            total_buy_clickouts:
+              type: sum
+              label: "Total Buy Clickouts"
+              compact: "thousands"
+              groups:
+                - "TVOD Signals"
+
+      - name: svod_clickouts
+        description: "Count of `se_category = 'clickout' AND se_action IN ('flatrate', 'sports')`. Subscription platform usage. Feature in `fct_user_segments` K-Means clustering."
+        meta:
+          dimension:
+            type: number
+            label: "SVOD Clickouts"
+          metrics:
+            avg_svod_per_user:
+              type: average
+              label: "Avg SVOD Clickouts per User"
+              round: 2
+              groups:
+                - "SVOD Signals"
+            total_svod_clickouts:
+              type: sum
+              label: "Total SVOD Clickouts"
+              compact: "thousands"
+              groups:
+                - "SVOD Signals"
+
+      - name: unique_titles_engaged
+        description: "Distinct `title_entity_id` count for this user. Content breadth signal. Feature in `fct_user_segments` K-Means clustering."
+        meta:
+          dimension:
+            type: number
+            label: "Unique Titles Engaged"
+          metrics:
+            avg_titles_per_user:
+              type: average
+              label: "Avg Unique Titles per User"
+              round: 1
+              groups:
+                - "User Engagement"
+            max_titles_per_user:
+              type: max
+              label: "Max Unique Titles (Power User)"
+              groups:
+                - "User Engagement"
+
+      - name: early_period_events
+        description: "Event count between Dec 1–14. Used alongside `recent_period_events` to compute the churn risk flag in `fct_user_segments`."
+        meta:
+          dimension:
+            type: number
+            label: "Early Period Events (Dec 1–14)"
+          metrics:
+            avg_early_events:
+              type: average
+              label: "Avg Events in Early Period"
+              round: 1
+              groups:
+                - "Churn Detection"
+
+      - name: recent_period_events
+        description: |
+          Event count between Dec 15–31. Compared to `early_period_events` as
+          daily rates in `fct_user_segments`:
+          `churn_risk_flag = (recent / 17) < (early / 14) * 0.5 AND early >= 3`.
+        meta:
+          dimension:
+            type: number
+            label: "Recent Period Events (Dec 15–31)"
+          metrics:
+            avg_recent_events:
+              type: average
+              label: "Avg Events in Recent Period"
+              round: 1
+              groups:
+                - "Churn Detection"

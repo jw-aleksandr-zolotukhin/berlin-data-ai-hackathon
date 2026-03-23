@@ -1,0 +1,35 @@
+contentType: chart
+name: "Titles by Acquisition Tier"
+slug: bar-titles-by-acquisition-tier
+spaceSlug: streamcap
+tableName: fct_title_acquisition_priority
+version: 1
+chartConfig:
+  type: cartesian
+  config:
+    eChartsConfig:
+      series:
+        - type: bar
+          encode:
+            xRef:
+              field: fct_title_acquisition_priority_acquisition_tier
+            yRef:
+              field: fct_title_acquisition_priority_total_titles
+    layout:
+      xField: fct_title_acquisition_priority_acquisition_tier
+      yField:
+        - fct_title_acquisition_priority_total_titles
+metricQuery:
+  exploreName: fct_title_acquisition_priority
+  tableCalculations: []
+  dimensions:
+    - fct_title_acquisition_priority_acquisition_tier
+  filters: {}
+  limit: 10
+  metrics:
+    - fct_title_acquisition_priority_total_titles
+  sorts:
+    - fieldId: fct_title_acquisition_priority_total_titles
+      descending: true
+tableConfig:
+  columnOrder: []

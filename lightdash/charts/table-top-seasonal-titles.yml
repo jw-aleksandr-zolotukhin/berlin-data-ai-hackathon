@@ -1,0 +1,57 @@
+contentType: chart
+name: "Top Titles by Holiday Demand Spike"
+slug: table-top-seasonal-titles
+spaceSlug: streamcap
+tableName: fct_title_seasonality
+version: 1
+chartConfig:
+  type: table
+  config:
+    showTableNames: false
+    hideRowNumbers: false
+    columns:
+      fct_title_seasonality_title:
+        name: "Title"
+        frozen: true
+        visible: true
+      fct_title_seasonality_object_type:
+        name: "Type"
+        visible: true
+      fct_title_seasonality_max_weekly_avod_score:
+        name: "Peak AVOD Score"
+        visible: true
+        displayStyle: bar
+        color: "#36A2EB"
+      fct_title_seasonality_total_weekly_avod_score:
+        name: "Total AVOD Score"
+        visible: true
+      fct_title_seasonality_avg_wow_change:
+        name: "WoW Change"
+        visible: true
+      fct_title_seasonality_avg_weekly_unique_users:
+        name: "Avg Weekly Users"
+        visible: true
+metricQuery:
+  exploreName: fct_title_seasonality
+  tableCalculations: []
+  dimensions:
+    - fct_title_seasonality_title
+    - fct_title_seasonality_object_type
+  filters: {}
+  limit: 20
+  metrics:
+    - fct_title_seasonality_max_weekly_avod_score
+    - fct_title_seasonality_total_weekly_avod_score
+    - fct_title_seasonality_avg_wow_change
+    - fct_title_seasonality_avg_weekly_unique_users
+  sorts:
+    - fieldId: fct_title_seasonality_max_weekly_avod_score
+      descending: true
+tableConfig:
+  columnOrder:
+    - fct_title_seasonality_title
+    - fct_title_seasonality_object_type
+    - fct_title_seasonality_max_weekly_avod_score
+    - fct_title_seasonality_total_weekly_avod_score
+    - fct_title_seasonality_avg_wow_change
+    - fct_title_seasonality_avg_weekly_unique_users
